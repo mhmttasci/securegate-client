@@ -57,7 +57,7 @@ jobs:
           export DISPLAY=:0
           openbox &
           sleep 1
-          chromium-browser --kiosk file:///app/index.html
+          chromium-browser --kiosk file:///app/index.htmll
           SYSEOF
           chmod +x iso-root/system/sg-kiosk-start.sh
 
