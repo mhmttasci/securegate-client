@@ -6,7 +6,7 @@
 # Kullanım:
 #   sudo bash build-iso.sh [--output securegate.iso] [--label "SECUREGATE"]
 #
-# Çıktı:
+# Çıktı:::
 #   securegate-<tarih>.iso  — BIOS + UEFI önyüklenebilir ISO
 
 set -euo pipefail
