@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SecureGate Client</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Syne:wght@400;500;600;700;800&display=swap');
+
+  :root {
+    --bg: #05070a;
+    --bg2: #0c0f14;
+    --bg3: #131720;
+    --border: rgba(0,220,180,0.08);
+    --border2: rgba(0,220,180,0.18);
+    --text: #dde8f0;
+    --muted: #4a6070;
+    --accent: #00dcb4;
+    --accent2: #00a8ff;
+    --danger: #ff3d5a;
+    --warn: #ffb020;
+    --success: #00dc87;
+    --r: 6px;
+    --r2: 12px;
+    --font-head: 'Syne', sans-serif;
+    --font-mono: 'IBM Plex Mono', monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* Background grid */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,220,180,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,220,180,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+  }
+
+  /* Corner decoration */
+  .corner {
+    position: fixed;
+    width: 60px; height: 60px;
+    border-color: rgba(0,220,180,0.15);
+    border-style: solid;
+  }
+
+  .corner-tl { top: 20px; left: 20px; border-width: 2px 0 0 2px; }
+  .corner-tr { top: 20px; right: 20px; border-width: 2px 2px 0 0; }
+  .corner-bl { bottom: 20px; left: 20px; border-width: 0 0 2px 2px; }
+  .corner-br { bottom: 20px; right: 20px; border-width: 0 2px 2px 0; }
+
+  /* MAIN CONTAINER */
+  .app {
+    width: 420px;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* HEADER */
+  .header {
+    text-align: center;
+    margin-bottom: 28px;
+  }
+
+  .logo-mark {
+    width: 52px; height: 52px;
+    margin: 0 auto 12px;
+    position: relative;
+  }
+
+  .logo-hex {
+    width: 52px; height: 52px;
+  }
+
+  .logo-name {
+    font-family: var(--font-head);
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    color: var(--accent);
+  }
+
+  .logo-tagline {
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-top: 3px;
+  }
+
+  /* STATUS BAR */
+  .status-bar {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--r2);
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    font-size: 11px;
+  }
+
+  .status-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--muted);
+  }
+
+  .status-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+  }
+
+  .dot-ok { background: var(--success); box-shadow: 0 0 5px var(--success); }
+  .dot-warn { background: var(--warn); }
+  .dot-err { background: var(--danger); }
+
+  /* MAIN CARD */
+  .card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--r2);
+    overflow: hidden;
+  }
+
+  .card-header {
+    padding: 16px 20px 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .step-badge {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  .step-done { background: rgba(0,220,135,0.15); color: var(--success); }
+  .step-active { background: rgba(0,220,180,0.15); color: var(--accent); border: 1px solid rgba(0,220,180,0.3); }
+  .step-pending { background: rgba(255,255,255,0.05); color: var(--muted); }
+
+  .card-title {
+    font-family: var(--font-head);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .card-body { padding: 20px; }
+
+  /* PROGRESS STEPS */
+  .steps {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin-bottom: 20px;
+  }
+
+  .step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    flex: 1;
+    position: relative;
+  }
+
+  .step:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    width: 100%;
+    height: 1px;
+    background: var(--border2);
+  }
+
+  .step.done::after { background: var(--success); opacity: 0.4; }
+
+  .step-circle {
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px;
+    z-index: 1;
+    background: var(--bg3);
+    border: 1px solid var(--border2);
+    color: var(--muted);
+    transition: all 0.3s;
+  }
+
+  .step.done .step-circle { background: rgba(0,220,135,0.15); border-color: var(--success); color: var(--success); }
+  .step.active .step-circle { background: rgba(0,220,180,0.15); border-color: var(--accent); color: var(--accent); animation: stepPulse 1.5s infinite; }
+
+  @keyframes stepPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(0,220,180,0.3); }
+    50% { box-shadow: 0 0 0 6px rgba(0,220,180,0); }
+  }
+
+  .step-label { font-size: 9px; letter-spacing: 0.5px; color: var(--muted); text-transform: uppercase; text-align: center; }
+  .step.active .step-label { color: var(--accent); }
+  .step.done .step-label { color: var(--success); }
+
+  /* CERT DISPLAY */
+  .cert-display {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    padding: 12px 14px;
+    margin-bottom: 14px;
+  }
+
+  .cert-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 3px 0;
+    font-size: 11px;
+  }
+
+  .cert-key { color: var(--muted); }
+  .cert-val { color: var(--text); font-size: 11px; }
+  .cert-val.ok { color: var(--success); }
+  .cert-val.warn { color: var(--warn); }
+
+  /* INPUT */
+  .input-group { margin-bottom: 14px; }
+  .input-label { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block; }
+
+  .input-field {
+    width: 100%;
+    background: var(--bg3);
+    border: 1px solid var(--border2);
+    border-radius: var(--r);
+    padding: 10px 12px;
+    color: var(--text);
+    font-size: 13px;
+    font-family: var(--font-mono);
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .input-field:focus { border-color: var(--accent); }
+  .input-field::placeholder { color: var(--muted); }
+
+  /* MFA INPUT */
+  .mfa-inputs {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin: 16px 0;
+  }
+
+  .mfa-digit {
+    width: 42px; height: 50px;
+    background: var(--bg3);
+    border: 1px solid var(--border2);
+    border-radius: var(--r);
+    text-align: center;
+    font-size: 20px;
+    font-family: var(--font-mono);
+    font-weight: 600;
+    color: var(--accent);
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .mfa-digit:focus { border-color: var(--accent); }
+
+  /* BUTTONS */
+  .btn-primary {
+    width: 100%;
+    padding: 12px;
+    background: var(--accent);
+    color: #000;
+    border: none;
+    border-radius: var(--r);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: opacity 0.15s;
+    text-transform: uppercase;
+  }
+
+  .btn-primary:hover { opacity: 0.9; }
+  .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .btn-secondary {
+    width: 100%;
+    padding: 10px;
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--border2);
+    border-radius: var(--r);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+    margin-top: 8px;
+    text-transform: uppercase;
+  }
+
+  .btn-secondary:hover { color: var(--text); border-color: var(--border2); background: rgba(255,255,255,0.03); }
+
+  /* PROGRESS BAR */
+  .progress-bar {
+    height: 3px;
+    background: var(--bg3);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-bottom: 12px;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    border-radius: 2px;
+    transition: width 0.5s ease;
+  }
+
+  /* LOG OUTPUT */
+  .log-output {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    padding: 10px 12px;
+    height: 90px;
+    overflow-y: auto;
+    font-size: 11px;
+    line-height: 1.7;
+    margin-bottom: 14px;
+  }
+
+  .log-line { display: flex; gap: 8px; }
+  .log-time { color: var(--muted); flex-shrink: 0; }
+  .log-ok { color: var(--success); }
+  .log-warn { color: var(--warn); }
+  .log-err { color: var(--danger); }
+  .log-info { color: var(--accent); }
+
+  /* CONNECTED STATE */
+  .connected-state { text-align: center; padding: 10px 0; }
+
+  .conn-icon {
+    width: 64px; height: 64px;
+    margin: 0 auto 12px;
+    background: rgba(0,220,135,0.08);
+    border: 1px solid rgba(0,220,135,0.25);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px;
+    animation: connPulse 3s infinite;
+  }
+
+  @keyframes connPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(0,220,135,0.2); }
+    50% { box-shadow: 0 0 0 12px rgba(0,220,135,0); }
+  }
+
+  .conn-title {
+    font-family: var(--font-head);
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--success);
+    margin-bottom: 4px;
+  }
+
+  .conn-sub { font-size: 11px; color: var(--muted); margin-bottom: 16px; }
+
+  .conn-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+
+  .conn-stat {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    padding: 8px;
+    text-align: center;
+  }
+
+  .conn-stat-val { font-size: 14px; font-weight: 600; color: var(--text); }
+  .conn-stat-key { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+
+  .cipher-tag {
+    display: inline-block;
+    padding: 3px 8px;
+    background: rgba(0,168,255,0.1);
+    border: 1px solid rgba(0,168,255,0.2);
+    border-radius: var(--r);
+    font-size: 10px;
+    color: var(--accent2);
+    margin-bottom: 16px;
+    letter-spacing: 0.3px;
+  }
+
+  .btn-disconnect {
+    width: 100%;
+    padding: 10px;
+    background: rgba(255,61,90,0.1);
+    color: var(--danger);
+    border: 1px solid rgba(255,61,90,0.25);
+    border-radius: var(--r);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-transform: uppercase;
+  }
+
+  .btn-disconnect:hover { background: rgba(255,61,90,0.18); }
+
+  /* TIMER */
+  .session-timer {
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: 2px;
+    margin-bottom: 4px;
+    font-family: var(--font-mono);
+  }
+
+  /* SCREENS */
+  .screen { display: none; }
+  .screen.active { display: block; }
+
+  /* TOAST */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    background: var(--bg2);
+    border: 1px solid var(--border2);
+    border-radius: var(--r);
+    padding: 10px 16px;
+    font-size: 12px;
+    color: var(--text);
+    transition: transform 0.3s;
+    z-index: 100;
+    white-space: nowrap;
+  }
+
+  .toast.show { transform: translateX(-50%) translateY(0); }
+
+  /* FIDO2 SCREEN */
+  .fido-icon {
+    width: 56px; height: 56px;
+    margin: 12px auto;
+    background: rgba(0,220,180,0.08);
+    border: 1px solid var(--border2);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 24px;
+    animation: fidoPulse 1s ease-in-out infinite alternate;
+  }
+
+  @keyframes fidoPulse {
+    from { border-color: rgba(0,220,180,0.2); }
+    to { border-color: rgba(0,220,180,0.6); }
+  }
+
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<div class="corner corner-tl"></div>
+<div class="corner corner-tr"></div>
+<div class="corner corner-bl"></div>
+<div class="corner corner-br"></div>
+
+<div class="app">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="logo-mark">
+      <svg class="logo-hex" viewBox="0 0 52 52" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <polygon points="26,2 48,14 48,38 26,50 4,38 4,14" stroke="rgba(0,220,180,0.4)" stroke-width="1" fill="rgba(0,220,180,0.05)"/>
+        <polygon points="26,8 42,17 42,35 26,44 10,35 10,17" stroke="rgba(0,220,180,0.2)" stroke-width="0.5" fill="none"/>
+        <text x="26" y="31" text-anchor="middle" font-size="16" font-family="Syne,sans-serif" font-weight="700" fill="#00dcb4">SG</text>
+      </svg>
+    </div>
+    <div class="logo-name">SecureGate</div>
+    <div class="logo-tagline">Zero Trust VPN Client v2.4</div>
+  </div>
+
+  <!-- STATUS BAR -->
+  <div class="status-bar">
+    <div class="status-item">
+      <div class="status-dot dot-ok"></div>
+      USB Kiosk
+    </div>
+    <div class="status-item">
+      <div class="status-dot dot-ok" id="certDot"></div>
+      <span id="certStatus">Sertifika Yüklü</span>
+    </div>
+    <div class="status-item">
+      <div class="status-dot" id="connDot" style="background:var(--muted)"></div>
+      <span id="connStatus">Bağlı Değil</span>
+    </div>
+    <div class="status-item" style="color:var(--accent);font-size:10px" id="clockEl"></div>
+  </div>
+
+  <!-- MAIN CARD -->
+  <div class="card">
+    <div class="card-header">
+      <div class="step-badge step-active" id="stageIcon">→</div>
+      <div class="card-title" id="stageTitle">Kimlik Doğrulama</div>
+    </div>
+
+    <div class="card-body">
+
+      <!-- STEP PROGRESS -->
+      <div class="steps">
+        <div class="step done" id="s1"><div class="step-circle">✓</div><div class="step-label">Sertifika</div></div>
+        <div class="step active" id="s2"><div class="step-circle">2</div><div class="step-label">Kimlik</div></div>
+        <div class="step" id="s3"><div class="step-circle">3</div><div class="step-label">MFA</div></div>
+        <div class="step" id="s4"><div class="step-circle">4</div><div class="step-label">VPN</div></div>
+        <div class="step" id="s5"><div class="step-circle">5</div><div class="step-label">VDI</div></div>
+      </div>
+
+      <!-- CERT INFO (always visible as compact row) -->
+      <div class="cert-display">
+        <div class="cert-row">
+          <span class="cert-key">İstemci Sertifikası</span>
+          <span class="cert-val ok">✓ Doğrulandı</span>
+        </div>
+        <div class="cert-row">
+          <span class="cert-key">Parmak İzi</span>
+          <span class="cert-val" style="font-size:10px">4A:B2:...F1:E8</span>
+        </div>
+        <div class="cert-row">
+          <span class="cert-key">Şifreleme</span>
+          <span class="cert-val">ECDSA P-384</span>
+        </div>
+        <div class="cert-row">
+          <span class="cert-key">CA Güveni</span>
+          <span class="cert-val ok">SecureGate Root CA</span>
+        </div>
+        <div class="cert-row">
+          <span class="cert-key">CRL Durumu</span>
+          <span class="cert-val ok">İptal Edilmedi</span>
+        </div>
+      </div>
+
+      <!-- SCREEN 1: LOGIN -->
+      <div class="screen active" id="screen-login">
+        <div class="input-group">
+          <label class="input-label">Kullanıcı Adı</label>
+          <input class="input-field" type="text" id="usernameInput" placeholder="kullanici.adi" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="input-group">
+          <label class="input-label">Parola</label>
+          <input class="input-field" type="password" id="passwordInput" placeholder="••••••••">
+        </div>
+        <button class="btn-primary" id="loginBtn" onclick="doLogin()">Devam Et →</button>
+      </div>
+
+      <!-- SCREEN 2: MFA TOTP -->
+      <div class="screen" id="screen-mfa">
+        <div style="text-align:center;margin-bottom:12px">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Authenticator uygulamanızdaki 6 haneli kodu girin</div>
+          <div id="mfaTimer" style="font-size:11px;color:var(--warn)">Kod geçerliliği: 28s</div>
+        </div>
+        <div class="mfa-inputs">
+          <input class="mfa-digit" maxlength="1" type="tel" id="d1" oninput="moveNext(this,'d2')">
+          <input class="mfa-digit" maxlength="1" type="tel" id="d2" oninput="moveNext(this,'d3')">
+          <input class="mfa-digit" maxlength="1" type="tel" id="d3" oninput="moveNext(this,'d4')">
+          <input class="mfa-digit" maxlength="1" type="tel" id="d4" oninput="moveNext(this,'d5')">
+          <input class="mfa-digit" maxlength="1" type="tel" id="d5" oninput="moveNext(this,'d6')">
+          <input class="mfa-digit" maxlength="1" type="tel" id="d6" oninput="checkMFA()">
+        </div>
+        <button class="btn-primary" id="mfaBtn" onclick="verifyMFA()">Doğrula</button>
+        <button class="btn-secondary" onclick="goFido()">FIDO2 / YubiKey Kullan</button>
+      </div>
+
+      <!-- SCREEN 3: FIDO2 -->
+      <div class="screen" id="screen-fido">
+        <div style="text-align:center">
+          <div class="fido-icon">🔑</div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:4px">YubiKey'inizi USB portuna takın</div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:16px">Altın butona dokunun veya bekleyin</div>
+          <div class="progress-bar"><div class="progress-fill" id="fidoProgress" style="width:0%"></div></div>
+          <div style="font-size:10px;color:var(--muted)" id="fidoMsg">Cihaz bekleniyor...</div>
+        </div>
+        <button class="btn-secondary" style="margin-top:16px" onclick="goMFA()">← TOTP'ye Dön</button>
+      </div>
+
+      <!-- SCREEN 4: CONNECTING -->
+      <div class="screen" id="screen-connecting">
+        <div class="progress-bar"><div class="progress-fill" id="connectProgress" style="width:0%"></div></div>
+        <div class="log-output" id="logOutput"></div>
+        <div style="text-align:center;font-size:11px;color:var(--muted)" id="connectMsg">Başlatılıyor...</div>
+      </div>
+
+      <!-- SCREEN 5: CONNECTED -->
+      <div class="screen" id="screen-connected">
+        <div class="connected-state">
+          <div class="conn-icon">🔒</div>
+          <div class="session-timer" id="sessionTimer">00:00:00</div>
+          <div class="conn-title">Güvenli Bağlantı Aktif</div>
+          <div class="conn-sub" id="vdiInfo">VDI: vdi-pool-02 / vm-14 atandı</div>
+          <div class="cipher-tag">TLS 1.3 • ECDHE-AES256-GCM-SHA384 • PFS Aktif</div>
+          <div class="conn-stats">
+            <div class="conn-stat">
+              <div class="conn-stat-val" id="downSpeed">0 KB/s</div>
+              <div class="conn-stat-key">İndirme</div>
+            </div>
+            <div class="conn-stat">
+              <div class="conn-stat-val" id="upSpeed">0 KB/s</div>
+              <div class="conn-stat-key">Yükleme</div>
+            </div>
+            <div class="conn-stat">
+              <div class="conn-stat-val" id="latency">—</div>
+              <div class="conn-stat-key">Gecikme</div>
+            </div>
+          </div>
+          <button class="btn-disconnect" onclick="doDisconnect()">Bağlantıyı Kes</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- BOTTOM INFO -->
+  <div style="text-align:center;margin-top:14px;font-size:10px;color:var(--muted);letter-spacing:0.3px">
+    Tüm bağlantılar uçtan uca şifrelenir • Kiosk modu aktif • Sıfır güven mimarisi
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let currentScreen = 'login';
+let sessionStart = null;
+let sessionInterval = null;
+let fidoInterval = null;
+let mfaCountdown = 28;
+let mfaInterval = null;
+let speedInterval = null;
+
+// Clock
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clockEl').textContent =
+    now.toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// Toast
+function showToast(msg, dur = 2500) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), dur);
+}
+
+// Screens
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('screen-' + id).classList.add('active');
+  currentScreen = id;
+}
+
+// Stage
+function setStage(step, icon, title) {
+  document.getElementById('stageIcon').textContent = icon;
+  document.getElementById('stageTitle').textContent = title;
+  for (let i = 1; i <= 5; i++) {
+    const el = document.getElementById('s' + i);
+    el.className = 'step' + (i < step ? ' done' : i === step ? ' active' : '');
+    if (i < step) el.querySelector('.step-circle').textContent = '✓';
+    else el.querySelector('.step-circle').textContent = i;
+  }
+}
+
+// LOGIN
+function doLogin() {
+  const u = document.getElementById('usernameInput').value.trim();
+  const p = document.getElementById('passwordInput').value;
+  if (!u || !p) { showToast('Kullanıcı adı ve parola gerekli'); return; }
+
+  document.getElementById('loginBtn').disabled = true;
+  document.getElementById('loginBtn').textContent = 'Doğrulanıyor...';
+
+  setTimeout(() => {
+    document.getElementById('loginBtn').disabled = false;
+    document.getElementById('loginBtn').textContent = 'Devam Et →';
+    setStage(3, '⬡', 'MFA Doğrulama');
+    showScreen('mfa');
+    startMFATimer();
+  }, 1200);
+}
+
+// MFA Timer
+function startMFATimer() {
+  mfaCountdown = 28;
+  clearInterval(mfaInterval);
+  mfaInterval = setInterval(() => {
+    mfaCountdown--;
+    if (mfaCountdown <= 0) {
+      clearInterval(mfaInterval);
+      document.getElementById('mfaTimer').textContent = 'Kod süresi doldu! Yeniden deneyin.';
+      document.getElementById('mfaTimer').style.color = 'var(--danger)';
+      ['d1','d2','d3','d4','d5','d6'].forEach(id => document.getElementById(id).value = '');
+      setTimeout(() => {
+        mfaCountdown = 30;
+        document.getElementById('mfaTimer').style.color = 'var(--warn)';
+        startMFATimer();
+      }, 1500);
+    } else {
+      document.getElementById('mfaTimer').textContent = 'Kod geçerliliği: ' + mfaCountdown + 's';
+    }
+  }, 1000);
+}
+
+function moveNext(el, nextId) {
+  if (el.value.length >= 1) document.getElementById(nextId).focus();
+}
+
+function checkMFA() {
+  const code = ['d1','d2','d3','d4','d5','d6'].map(id => document.getElementById(id).value).join('');
+  if (code.length === 6) setTimeout(verifyMFA, 200);
+}
+
+function verifyMFA() {
+  clearInterval(mfaInterval);
+  setStage(4, '⟳', 'VPN Bağlantısı Kuruluyor');
+  showScreen('connecting');
+  startConnecting();
+}
+
+function goFido() {
+  showScreen('fido');
+  let prog = 0;
+  let msgs = ['Cihaz bekleniyor...', 'USB sinyali algılandı...', 'FIDO2 handshake...', 'Kimlik doğrulanıyor...', 'Tamamlandı!'];
+  let mi = 0;
+  document.getElementById('fidoProgress').style.width = '0%';
+  fidoInterval = setInterval(() => {
+    prog += 4;
+    document.getElementById('fidoProgress').style.width = Math.min(prog, 100) + '%';
+    if (prog % 20 === 0 && mi < msgs.length) {
+      document.getElementById('fidoMsg').textContent = msgs[mi++];
+    }
+    if (prog >= 100) {
+      clearInterval(fidoInterval);
+      setStage(4, '⟳', 'VPN Bağlantısı Kuruluyor');
+      showScreen('connecting');
+      startConnecting();
+    }
+  }, 80);
+}
+
+function goMFA() { showScreen('mfa'); }
+
+// CONNECTING
+function addLog(type, msg) {
+  const log = document.getElementById('logOutput');
+  const now = new Date().toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+  const line = document.createElement('div');
+  line.className = 'log-line';
+  line.innerHTML = `<span class="log-time">${now}</span><span class="log-${type}">${msg}</span>`;
+  log.appendChild(line);
+  log.scrollTop = log.scrollHeight;
+}
+
+function startConnecting() {
+  const steps = [
+    [0, () => addLog('info', '→ TLS 1.3 handshake başlatılıyor...'), 'Bağlantı hazırlanıyor'],
+    [600, () => addLog('ok', '✓ Sunucu sertifikası doğrulandı'), 'Sunucu sertifikası kontrol ediliyor'],
+    [1100, () => addLog('ok', '✓ mTLS istemci doğrulaması tamamlandı'), 'mTLS doğrulanıyor'],
+    [1600, () => addLog('info', '→ ECDHE anahtar değişimi tamamlandı'), 'Anahtar değişimi'],
+    [2100, () => addLog('ok', '✓ VPN tüneli kuruldu (AES-256-GCM)'), 'Şifreli tünel açılıyor'],
+    [2500, () => addLog('info', '→ VDI havuzundan VM tahsis ediliyor...'), 'VDI tahsis ediliyor'],
+    [3000, () => addLog('ok', '✓ VDI: pool-02/vm-14 atandı'), 'VDI hazırlanıyor'],
+    [3400, () => addLog('info', '→ Grup politikaları uygulanıyor...'), 'GPO uygulanıyor'],
+    [3700, () => addLog('ok', '✓ İzolasyon politikaları aktif'), 'Politikalar yükleniyor'],
+    [4000, () => addLog('ok', '✓ Ekran koruması aktif'), 'Güvenlik katmanları'],
+    [4300, () => addLog('ok', '✓ Pano engeli aktif'), null],
+    [4600, () => addLog('ok', '✓ Bağlantı hazır — güvenli oturum başlatılıyor'), null],
+  ];
+
+  let prog = 0;
+  const progressInterval = setInterval(() => {
+    prog = Math.min(prog + 1.5, 99);
+    document.getElementById('connectProgress').style.width = prog + '%';
+  }, 50);
+
+  steps.forEach(([delay, fn, msg]) => {
+    setTimeout(() => {
+      fn();
+      if (msg) document.getElementById('connectMsg').textContent = msg;
+    }, delay);
+  });
+
+  setTimeout(() => {
+    clearInterval(progressInterval);
+    document.getElementById('connectProgress').style.width = '100%';
+    setTimeout(() => {
+      setStage(5, '✓', 'Güvenli Oturum Aktif');
+      document.getElementById('stageIcon').style.background = 'rgba(0,220,135,0.15)';
+      document.getElementById('stageIcon').style.color = 'var(--success)';
+      document.getElementById('connDot').className = 'status-dot dot-ok';
+      document.getElementById('connStatus').textContent = 'Bağlı';
+      showScreen('connected');
+      startSession();
+    }, 400);
+  }, 5000);
+}
+
+function startSession() {
+  sessionStart = Date.now();
+  const pools = ['vdi-pool-01 / vm-4', 'vdi-pool-02 / vm-14', 'vdi-pool-03 / vm-7'];
+  document.getElementById('vdiInfo').textContent = 'VDI: ' + pools[Math.floor(Math.random()*3)] + ' atandı';
+
+  sessionInterval = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - sessionStart) / 1000);
+    const h = Math.floor(elapsed / 3600).toString().padStart(2, '0');
+    const m = Math.floor((elapsed % 3600) / 60).toString().padStart(2, '0');
+    const s = (elapsed % 60).toString().padStart(2, '0');
+    document.getElementById('sessionTimer').textContent = `${h}:${m}:${s}`;
+  }, 1000);
+
+  speedInterval = setInterval(() => {
+    const d = Math.floor(Math.random() * 800 + 200);
+    const u = Math.floor(Math.random() * 200 + 50);
+    const lat = Math.floor(Math.random() * 15 + 8);
+    document.getElementById('downSpeed').textContent = d > 1000 ? (d/1000).toFixed(1) + ' MB/s' : d + ' KB/s';
+    document.getElementById('upSpeed').textContent = u + ' KB/s';
+    document.getElementById('latency').textContent = lat + ' ms';
+  }, 2000);
+}
+
+function doDisconnect() {
+  clearInterval(sessionInterval);
+  clearInterval(speedInterval);
+  document.getElementById('connDot').className = 'status-dot';
+  document.getElementById('connDot').style.background = 'var(--muted)';
+  document.getElementById('connStatus').textContent = 'Bağlı Değil';
+
+  setStage(2, '→', 'Kimlik Doğrulama');
+  document.getElementById('stageIcon').style.background = '';
+  document.getElementById('stageIcon').style.color = '';
+  document.getElementById('usernameInput').value = '';
+  document.getElementById('passwordInput').value = '';
+  ['d1','d2','d3','d4','d5','d6'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('logOutput').innerHTML = '';
+  document.getElementById('connectProgress').style.width = '0%';
+  showScreen('login');
+  showToast('Oturum sonlandırıldı. VDI temizlendi.');
+}
+
+// Keyboard shortcut
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    if (currentScreen === 'login') doLogin();
+    else if (currentScreen === 'mfa') verifyMFA();
+  }
+});
+</script>
+</body>
+</html>

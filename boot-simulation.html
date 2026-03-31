@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<title>SecureGate — USB Boot Simülasyonu</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=Syne:wght@700;800&display=swap');
+
+  :root {
+    --bg: #000;
+    --green: #00ff41;
+    --green2: #00cc33;
+    --amber: #ffb020;
+    --red: #ff3d5a;
+    --blue: #00a8ff;
+    --muted: #3a4a3a;
+    --text: #c8e6c8;
+    --font: 'IBM Plex Mono', monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--green);
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.5;
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* PHASES */
+  .phase { display: none; width: 100%; height: 100vh; }
+  .phase.active { display: flex; }
+
+  /* ─── PHASE 0: BIOS POST ─── */
+  #ph-bios {
+    flex-direction: column;
+    padding: 30px 40px;
+    background: #000;
+  }
+
+  .bios-header {
+    color: var(--amber);
+    font-size: 12px;
+    margin-bottom: 24px;
+  }
+
+  .bios-line {
+    font-size: 12px;
+    margin-bottom: 2px;
+    opacity: 0;
+    transition: opacity 0.1s;
+  }
+
+  .bios-line.show { opacity: 1; }
+  .ok-tag { color: var(--green); }
+  .fail-tag { color: var(--red); }
+  .info-tag { color: var(--amber); }
+
+  .bios-boot-msg {
+    margin-top: 20px;
+    color: var(--amber);
+    font-size: 13px;
+    animation: blink 0.8s step-end infinite;
+  }
+
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+  /* ─── PHASE 1: GRUB ─── */
+  #ph-grub {
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+  }
+
+  .grub-box {
+    border: 1px solid #555;
+    width: 560px;
+    padding: 0;
+    background: #000;
+  }
+
+  .grub-title {
+    background: #aaa;
+    color: #000;
+    text-align: center;
+    padding: 4px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .grub-subtitle {
+    padding: 10px 14px 6px;
+    font-size: 12px;
+    color: #ccc;
+  }
+
+  .grub-menu-area {
+    margin: 6px 14px;
+    border: 1px solid #444;
+    padding: 2px 0;
+  }
+
+  .grub-entry {
+    padding: 3px 10px;
+    font-size: 13px;
+    color: #ccc;
+  }
+
+  .grub-entry.selected {
+    background: #aaa;
+    color: #000;
+  }
+
+  .grub-footer {
+    padding: 10px 14px 14px;
+    font-size: 11px;
+    color: #888;
+    line-height: 1.8;
+  }
+
+  .grub-countdown {
+    text-align: center;
+    margin-top: 16px;
+    font-size: 12px;
+    color: #888;
+  }
+
+  /* ─── PHASE 2: KERNEL BOOT ─── */
+  #ph-kernel {
+    flex-direction: column;
+    padding: 8px 14px;
+    background: #000;
+    overflow: hidden;
+  }
+
+  .kern-line {
+    font-size: 11px;
+    line-height: 1.45;
+    opacity: 0;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
+  .kern-line.show { opacity: 1; }
+  .kern-ok { color: var(--green); }
+  .kern-info { color: var(--blue); }
+  .kern-warn { color: var(--amber); }
+
+  /* ─── PHASE 3: SYSTEMD ─── */
+  #ph-systemd {
+    flex-direction: column;
+    padding: 20px 30px;
+    background: #000;
+    justify-content: flex-start;
+  }
+
+  .sd-header {
+    color: var(--text);
+    font-size: 13px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .sd-version { color: var(--muted); font-size: 11px; }
+
+  .sd-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 2px 0;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+
+  .sd-item.show { opacity: 1; }
+
+  .sd-status {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .sd-ok { background: var(--green); }
+  .sd-run { background: var(--amber); animation: sdpulse 0.5s infinite alternate; }
+  .sd-fail { background: var(--red); }
+
+  @keyframes sdpulse { from{opacity:1} to{opacity:0.3} }
+
+  .sd-name { color: var(--text); font-size: 12px; width: 280px; }
+  .sd-time { color: var(--muted); font-size: 11px; width: 60px; text-align: right; }
+  .sd-label { font-size: 11px; }
+  .sd-label.ok { color: var(--green); }
+  .sd-label.running { color: var(--amber); }
+  .sd-label.fail { color: var(--red); }
+
+  /* ─── PHASE 4: PRE-CHECK ─── */
+  #ph-precheck {
+    flex-direction: column;
+    padding: 30px 40px;
+    background: #000;
+  }
+
+  .pc-title {
+    font-size: 14px;
+    color: var(--blue);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .pc-title::before {
+    content: '[ SecureGate Pre-Flight Check ]';
+    color: var(--green);
+  }
+
+  .pc-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 3px 0;
+    opacity: 0;
+    transition: opacity 0.1s;
+    font-size: 12px;
+  }
+
+  .pc-item.show { opacity: 1; }
+
+  .pc-ico { width: 16px; flex-shrink: 0; }
+  .pc-ico.ok { color: var(--green); }
+  .pc-ico.run { color: var(--amber); animation: blink 0.4s step-end infinite; }
+  .pc-ico.fail { color: var(--red); }
+
+  .pc-msg { color: var(--text); }
+  .pc-val { color: var(--muted); margin-left: 4px; }
+  .pc-good { color: var(--green); }
+  .pc-bad { color: var(--red); }
+  .pc-warn { color: var(--amber); }
+
+  .pc-summary {
+    margin-top: 16px;
+    padding: 10px 14px;
+    border: 1px solid var(--green);
+    background: rgba(0,255,65,0.04);
+    font-size: 12px;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  .pc-summary.show { opacity: 1; }
+
+  /* ─── PHASE 5: X + KIOSK START ─── */
+  #ph-xstart {
+    flex-direction: column;
+    padding: 20px 40px;
+    background: #000;
+  }
+
+  .xs-line {
+    font-size: 12px;
+    opacity: 0;
+    margin-bottom: 2px;
+  }
+  .xs-line.show { opacity: 1; }
+
+  .xs-bar-wrap {
+    margin: 16px 0 8px;
+    height: 14px;
+    background: #111;
+    border: 1px solid #333;
+    overflow: hidden;
+    width: 360px;
+  }
+
+  .xs-bar {
+    height: 100%;
+    background: var(--green);
+    width: 0%;
+    transition: width 0.3s;
+  }
+
+  /* ─── PHASE 6: FADE TO APP ─── */
+  #ph-fade {
+    background: #000;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .fade-logo {
+    font-family: 'Syne', sans-serif;
+    font-size: 32px;
+    font-weight: 800;
+    color: #00dcb4;
+    opacity: 0;
+    transition: opacity 1s;
+  }
+
+  .fade-sub {
+    font-size: 11px;
+    letter-spacing: 3px;
+    color: #1a3a30;
+    text-transform: uppercase;
+    opacity: 0;
+    transition: opacity 1s 0.4s;
+  }
+
+  /* ─── CONTROLS ─── */
+  .ctrl {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    display: flex;
+    gap: 8px;
+    z-index: 999;
+  }
+
+  .ctrl-btn {
+    padding: 6px 12px;
+    background: rgba(0,255,65,0.08);
+    border: 1px solid rgba(0,255,65,0.25);
+    color: var(--green);
+    font-family: var(--font);
+    font-size: 11px;
+    cursor: pointer;
+    letter-spacing: 0.5px;
+  }
+
+  .ctrl-btn:hover { background: rgba(0,255,65,0.15); }
+
+  .phase-indicator {
+    position: fixed;
+    top: 8px;
+    right: 16px;
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 0.5px;
+    z-index: 999;
+  }
+</style>
+</head>
+<body>
+
+<div class="phase-indicator" id="phaseLabel">PHASE 0/6 — BIOS POST</div>
+
+<!-- PHASE 0: BIOS -->
+<div class="phase active" id="ph-bios">
+  <div class="bios-header">
+    AMI BIOS v2.20.1275 — Copyright (C) 2024 American Megatrends Inc.<br>
+    CPU: Intel(R) Core(TM) i7-1265U @ 1.80GHz<br>
+    Memory Test:
+  </div>
+  <div id="biosLines"></div>
+  <div class="bios-boot-msg" id="biosBoot" style="display:none">Booting from USB...</div>
+</div>
+
+<!-- PHASE 1: GRUB -->
+<div class="phase" id="ph-grub">
+  <div>
+    <div class="grub-box">
+      <div class="grub-title">GNU GRUB version 2.12</div>
+      <div class="grub-subtitle">Use the ↑ and ↓ keys to select which entry is highlighted.<br>Press enter to boot the selected OS.</div>
+      <div class="grub-menu-area">
+        <div class="grub-entry selected">*SecureGate Zero Trust Client</div>
+        <div class="grub-entry"> SecureGate Recovery (Admin Only)</div>
+      </div>
+      <div class="grub-footer">
+        Use the ↑ and ↓ keys to select which entry is highlighted.<br>
+        Press enter to boot the selected OS, `e' to edit the commands<br>
+        before booting or `c' for a command-line.
+      </div>
+    </div>
+    <div class="grub-countdown" id="grubTimer">The highlighted entry will be executed in 3s.</div>
+  </div>
+</div>
+
+<!-- PHASE 2: KERNEL -->
+<div class="phase" id="ph-kernel">
+  <div id="kernLines"></div>
+</div>
+
+<!-- PHASE 3: SYSTEMD -->
+<div class="phase" id="ph-systemd">
+  <div class="sd-header">
+    <span>systemd 255 (255.4-1ubuntu8)</span>
+    <span class="sd-version">+PAM +AUDIT +SELINUX +APPARMOR +SMACK +IMA +SYSVINIT</span>
+  </div>
+  <div id="sdItems"></div>
+</div>
+
+<!-- PHASE 4: PRE-CHECK -->
+<div class="phase" id="ph-precheck">
+  <div style="font-size:13px;color:var(--green);margin-bottom:16px;font-weight:500">
+    ┌─────────────────────────────────────────────────────┐<br>
+    │         SecureGate Pre-Flight Security Check        │<br>
+    └─────────────────────────────────────────────────────┘
+  </div>
+  <div id="pcItems"></div>
+  <div class="pc-summary" id="pcSummary">
+    <span style="color:var(--green)">✓ Tüm kontroller geçti</span>
+    <span style="color:var(--muted)"> — Kiosk başlatılıyor...</span>
+  </div>
+</div>
+
+<!-- PHASE 5: XORG + KIOSK -->
+<div class="phase" id="ph-xstart">
+  <div style="font-size:12px;color:var(--text);margin-bottom:12px">Kiosk ortamı hazırlanıyor...</div>
+  <div id="xsLines"></div>
+  <div style="margin-top:16px;font-size:11px;color:var(--muted)">Yükleniyor</div>
+  <div class="xs-bar-wrap"><div class="xs-bar" id="xsBar"></div></div>
+  <div style="font-size:11px;color:var(--muted)" id="xsMsg">Xorg başlatılıyor...</div>
+</div>
+
+<!-- PHASE 6: FADE -->
+<div class="phase" id="ph-fade">
+  <div class="fade-logo" id="fadeLogo">SecureGate</div>
+  <div class="fade-sub" id="fadeSub">Zero Trust Client v2.4</div>
+</div>
+
+<!-- CONTROLS -->
+<div class="ctrl">
+  <button class="ctrl-btn" onclick="restart()">↺ Yeniden Başlat</button>
+  <button class="ctrl-btn" id="skipBtn" onclick="skipPhase()">▶ Atla</button>
+</div>
+
+<script>
+let currentPhase = 0;
+let phaseTimeout = null;
+const phases = ['ph-bios','ph-grub','ph-kernel','ph-systemd','ph-precheck','ph-xstart','ph-fade'];
+const labels = [
+  'PHASE 0/6 — BIOS POST',
+  'PHASE 1/6 — GRUB2 BOOT MENU',
+  'PHASE 2/6 — KERNEL BOOT',
+  'PHASE 3/6 — SYSTEMD INIT',
+  'PHASE 4/6 — PRE-FLIGHT CHECK',
+  'PHASE 5/6 — KIOSK BAŞLATILIYOR',
+  'PHASE 6/6 — UYGULAMA YÜKLENİYOR'
+];
+
+function showPhase(n) {
+  phases.forEach((id,i) => {
+    document.getElementById(id).classList.toggle('active', i === n);
+  });
+  document.getElementById('phaseLabel').textContent = labels[n];
+  currentPhase = n;
+}
+
+function goNext() {
+  if (currentPhase < phases.length - 1) {
+    showPhase(currentPhase + 1);
+    initPhase(currentPhase);
+  }
+}
+
+function skipPhase() { clearAllTimers(); goNext(); initPhase(currentPhase); }
+function restart() { clearAllTimers(); location.reload(); }
+
+const allTimers = [];
+function t(fn, delay) { const id = setTimeout(fn, delay); allTimers.push(id); return id; }
+function clearAllTimers() { allTimers.forEach(clearTimeout); }
+
+function addLine(containerId, cls, html, delay) {
+  t(() => {
+    const el = document.createElement('div');
+    el.className = cls;
+    el.innerHTML = html;
+    document.getElementById(containerId).appendChild(el);
+    t(() => el.classList.add('show'), 30);
+  }, delay);
+}
+
+// ─── PHASE 0: BIOS ───
+function initBios() {
+  const lines = [
+    [200,  '<span class="ok-tag">16384MB RAM OK</span>'],
+    [500,  'AHCI SATA Controller — No drives'],
+    [700,  'NVMe Controller — No drives'],
+    [900,  '<span class="ok-tag">USB 3.2 Controller — Initialized</span>'],
+    [1100, '<span class="ok-tag">USB Mass Storage: SECUREGATE_USB (7.4GB)</span>'],
+    [1300, '<span class="ok-tag">Network Controller — Detected</span>'],
+    [1500, '<span class="info-tag">TPM 2.0 — Detected and enabled</span>'],
+    [1700, '<span class="info-tag">Secure Boot — Disabled (kiosk mode)</span>'],
+    [1900, 'PCI Devices enumerated: 12'],
+    [2100, '<span class="ok-tag">POST Complete — No errors</span>'],
+    [2300, 'Boot Priority: USB HDD → NETWORK → INTERNAL'],
+  ];
+
+  lines.forEach(([d, html]) =>
+    addLine('biosLines', 'bios-line', html, d)
+  );
+
+  t(() => {
+    document.getElementById('biosBoot').style.display = 'block';
+  }, 2700);
+
+  t(goNext, 3600);
+}
+
+// ─── PHASE 1: GRUB ───
+function initGrub() {
+  let secs = 3;
+  const el = document.getElementById('grubTimer');
+  const interval = setInterval(() => {
+    secs--;
+    if (secs <= 0) {
+      clearInterval(interval);
+      el.textContent = 'Booting SecureGate Zero Trust Client...';
+      t(goNext, 800);
+    } else {
+      el.textContent = `The highlighted entry will be executed in ${secs}s.`;
+    }
+  }, 1000);
+  allTimers.push(interval);
+}
+
+// ─── PHASE 2: KERNEL ───
+function initKernel() {
+  const lines = [
+    [0,   'kern-info', '[    0.000000] Linux version 6.8.0-51-generic (gcc version 13.2.0)'],
+    [50,  'kern-info', '[    0.000000] Command line: root=/dev/ram0 rw quiet splash securegate.kiosk=1'],
+    [100, 'kern-ok',   '[    0.001234] BIOS-provided physical RAM map: 16384MB'],
+    [160, 'kern-ok',   '[    0.023100] ACPI: RSDP 0x00000000000F0490 000024 (v02 BOCHS)'],
+    [220, 'kern-ok',   '[    0.082341] PCI: Using configuration type 1 for base access'],
+    [290, 'kern-ok',   '[    0.121500] AppArmor: AppArmor initialized'],
+    [350, 'kern-info', '[    0.198700] systemd: 255 (255.4-1ubuntu8)'],
+    [420, 'kern-ok',   '[    0.234100] NET: Registered PF_INET6 protocol family'],
+    [500, 'kern-ok',   '[    0.312800] USB 3.2 root hub registered'],
+    [570, 'kern-ok',   '[    0.401200] scsi host0: uas (USB Mass Storage — SECUREGATE_USB)'],
+    [640, 'kern-ok',   '[    0.512300] EXT4-fs (dm-0): mounted filesystem'],
+    [720, 'kern-ok',   '[    0.623400] overlayfs: upper/work dir not supported'],
+    [800, 'kern-info', '[    0.712300] tmpfs: /tmp mounted (ramdisk, noexec)'],
+    [880, 'kern-ok',   '[    0.823400] random: crng init done'],
+    [960, 'kern-ok',   '[    0.912000] IPv4 route cache hash table entries: 65536'],
+    [1040,'kern-ok',   '[    1.012300] e1000e 0000:00:19.0 eth0: Intel(R) PRO/1000 Network'],
+    [1120,'kern-ok',   '[    1.123400] Freeing unused kernel memory: 2440K'],
+    [1200,'kern-info', '[    1.234000] Run /init as init process'],
+  ];
+
+  lines.forEach(([d, cls, html]) =>
+    addLine('kernLines', 'kern-line ' + cls, html, d)
+  );
+
+  t(goNext, 2400);
+}
+
+// ─── PHASE 3: SYSTEMD ───
+function initSystemd() {
+  const items = [
+    [200,  'ok',  'local-fs.target',             '312ms',  'Yerel dosya sistemleri'],
+    [400,  'ok',  'systemd-udev.service',         '124ms',  'udev Kernel Device Manager'],
+    [600,  'ok',  'systemd-sysctl.service',       '88ms',   'Çekirdek parametreleri'],
+    [800,  'ok',  'apparmor.service',             '201ms',  'AppArmor başlatıldı'],
+    [1000, 'ok',  'systemd-networkd.service',     '312ms',  'Ağ yapılandırması'],
+    [1200, 'ok',  'network-online.target',        '1.824s', 'DHCP: 10.0.1.47 alındı'],
+    [1400, 'ok',  'systemd-timesyncd.service',    '88ms',   'Saat senkronizasyonu'],
+    [1600, 'run', 'securegate-kiosk.service',     '',       'Kiosk servisi başlatılıyor...'],
+  ];
+
+  const cont = document.getElementById('sdItems');
+
+  items.forEach(([delay, status, name, time, desc]) => {
+    t(() => {
+      const row = document.createElement('div');
+      row.className = 'sd-item';
+      row.innerHTML = `
+        <div class="sd-status sd-${status}"></div>
+        <div class="sd-name">${name}</div>
+        <div class="sd-time">${time}</div>
+        <div class="sd-label ${status === 'ok' ? 'ok' : status === 'run' ? 'running' : 'fail'}">
+          ${status === 'ok' ? '[ OK ]' : status === 'run' ? '[ STARTING ]' : '[ FAIL ]'}
+        </div>
+        <div style="margin-left:12px;font-size:11px;color:var(--muted)">${desc}</div>
+      `;
+      cont.appendChild(row);
+      t(() => row.classList.add('show'), 30);
+    }, delay);
+  });
+
+  t(goNext, 2800);
+}
+
+// ─── PHASE 4: PRE-CHECK ───
+function initPrecheck() {
+  const items = [
+    [200,  'ok',  '✓', 'İstemci sertifikası:', '<span class="pc-good">client.crt — ECDSA P-384</span>'],
+    [500,  'ok',  '✓', 'Sertifika geçerliliği:', '<span class="pc-good">487 gün kaldı (bitiş: 2026-06-15)</span>'],
+    [800,  'ok',  '✓', 'CA bundle:', '<span class="pc-good">SecureGate Root CA — güvenilir</span>'],
+    [1100, 'ok',  '✓', 'CRL kontrolü:', '<span class="pc-good">İptal edilmedi (offline CRL)</span>'],
+    [1400, 'ok',  '✓', 'Uygulama SHA-256:', '<span class="pc-good">Bütünlük doğrulandı</span>'],
+    [1700, 'ok',  '✓', 'Dosya sistemi:', '<span class="pc-good">Salt okunur (squashfs)</span>'],
+    [2000, 'ok',  '✓', 'Ağ bağlantısı:', '<span class="pc-good">10.0.1.47/24 — Gateway: 10.0.1.1</span>'],
+    [2300, 'ok',  '✓', 'Gateway erişimi:', '<span class="pc-good">gateway.internal:443 — ulaşılabilir</span>'],
+    [2600, 'ok',  '✓', 'AppArmor profilleri:', '<span class="pc-good">Chromium + sg-kiosk profilleri aktif</span>'],
+  ];
+
+  const cont = document.getElementById('pcItems');
+
+  items.forEach(([delay, cls, ico, label, val]) => {
+    t(() => {
+      const row = document.createElement('div');
+      row.className = 'pc-item';
+      row.innerHTML = `
+        <div class="pc-ico ${cls}">${ico}</div>
+        <div class="pc-msg">${label} <span class="pc-val">${val}</span></div>
+      `;
+      cont.appendChild(row);
+      t(() => row.classList.add('show'), 30);
+    }, delay);
+  });
+
+  t(() => document.getElementById('pcSummary').classList.add('show'), 3000);
+  t(goNext, 3800);
+}
+
+// ─── PHASE 5: XSTART ───
+function initXstart() {
+  const lines = [
+    [0,   'xs-line', '<span style="color:var(--blue)">→</span> Xorg :0 başlatılıyor (nolisten tcp, nocursor)'],
+    [400, 'xs-line', '<span style="color:var(--green)">✓</span> X Display :0 hazır (1920x1080 @ 60Hz)'],
+    [700, 'xs-line', '<span style="color:var(--blue)">→</span> Openbox pencere yöneticisi başlatılıyor (kiosk config)'],
+    [1000,'xs-line', '<span style="color:var(--green)">✓</span> Openbox aktif — masaüstü kilitlendi'],
+    [1300,'xs-line', '<span style="color:var(--blue)">→</span> Geçici Chrome profili oluşturuluyor (tmpfs)'],
+    [1600,'xs-line', '<span style="color:var(--green)">✓</span> Profil: /tmp/sg-chrome-a4f9b2 (izole, şifreli)'],
+    [1900,'xs-line', '<span style="color:var(--blue)">→</span> Chromium --kiosk --app=file:///usr/local/share/securegate/index.html'],
+  ];
+
+  lines.forEach(([d, cls, html]) =>
+    addLine('xsLines', cls, html, d)
+  );
+
+  const msgs = [
+    'Xorg başlatılıyor...',
+    'Openbox yükleniyor...',
+    'Güvenlik profilleri aktif...',
+    'Chromium başlatılıyor...',
+    'Uygulama yükleniyor...',
+    'Hazır!'
+  ];
+
+  let pct = 0;
+  const barInterval = setInterval(() => {
+    pct = Math.min(pct + 2, 100);
+    document.getElementById('xsBar').style.width = pct + '%';
+    const mi = Math.floor(pct / 100 * (msgs.length - 1));
+    document.getElementById('xsMsg').textContent = msgs[mi];
+    if (pct >= 100) clearInterval(barInterval);
+  }, 45);
+  allTimers.push(barInterval);
+
+  t(goNext, 3200);
+}
+
+// ─── PHASE 6: FADE ───
+function initFade() {
+  document.getElementById('skipBtn').style.display = 'none';
+  t(() => {
+    document.getElementById('fadeLogo').style.opacity = '1';
+    document.getElementById('fadeSub').style.opacity = '1';
+  }, 300);
+
+  t(() => {
+    // Fade to app
+    document.body.style.transition = 'opacity 0.8s';
+    document.body.style.opacity = '0';
+    t(() => {
+      window.location.href = 'securegate-client.html';
+    }, 900);
+  }, 2000);
+}
+
+function initPhase(n) {
+  const fns = [initBios, initGrub, initKernel, initSystemd, initPrecheck, initXstart, initFade];
+  fns[n] && fns[n]();
+}
+
+// Başlat
+initPhase(0);
+</script>
+</body>
+</html>
