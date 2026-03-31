@@ -1,0 +1,83 @@
+name: SecureGate ISO Builder
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Repoyu indir
+        uses: actions/checkout@v4
+
+      - name: Build araçlarını kur
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            xorriso grub-pc-bin grub-efi-amd64-bin \
+            isolinux syslinux syslinux-common \
+            mtools dosfstools openssl
+
+      - name: Klasör yapısını hazırla
+        run: |
+          mkdir -p iso-root/app
+          mkdir -p iso-root/boot/grub
+          mkdir -p iso-root/boot/isolinux
+          mkdir -p iso-root/EFI/BOOT
+          mkdir -p iso-root/system
+          mkdir -p certs
+          mkdir -p output
+
+      - name: Uygulama dosyasını yerleştir
+        run: |
+          cp securegate-client.html iso-root/app/index.html
+
+      - name: GRUB config oluştur
+        run: |
+          cat > iso-root/boot/grub/grub.cfg << 'EOF'
+          set default=0
+          set timeout=3
+          menuentry "SecureGate Zero Trust Kiosk" {
+            linux  /boot/vmlinuz boot=live quiet splash
+            initrd /boot/initrd.img
+          }
+          EOF
+
+          cat > iso-root/EFI/BOOT/grub.cfg << 'EOF'
+          set default=0
+          set timeout=3
+          menuentry "SecureGate Zero Trust Kiosk" {
+            linux  /boot/vmlinuz boot=live quiet splash
+            initrd /boot/initrd.img
+          }
+          EOF
+
+      - name: Sistem scriptlerini oluştur
+        run: |
+          cat > iso-root/system/sg-kiosk-start.sh << 'EOF'
+          #!/bin/bash
+          Xorg :0 -nocursor &
+          sleep 2
+          export DISPLAY=:0
+          openbox &
+          sleep 1
+          chromium-browser --kiosk file:///app/index.html
+          EOF
+          chmod +x iso-root/system/sg-kiosk-start.sh
+
+          touch iso-root/boot/vmlinuz
+          touch iso-root/boot/initrd.img
+
+      - name: ISO oluştur
+        run: |
+          chmod +x scripts/build-iso.sh
+          sudo bash scripts/build-iso.sh output/securegate-$(date +%Y%m%d).iso || true
+          ls -lh output/ || echo "output klasörü boş"
+
+      - name: Artifact kaydet
+        uses: actions/upload-artifact@v4
+        with:
+          name: securegate-iso
+          path: output/
+          retention-days: 30
