@@ -8,37 +8,30 @@ on:
 
 jobs:
   build-iso:
-    runs-on: ubuntu-24.04 # En güncel ve stabil LTS
-
-    # Bütün komutların doğrudan thinRoot içinde çalışması için dizin kilitliyoruz
-    defaults:
-      run:
-        working-directory: ./thinRoot
+    runs-on: ubuntu-24.04
 
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
       with:
-        persist-credentials: false # Gizli header çatışmalarını ve yetki hatalarını önler
+        persist-credentials: false
 
     - name: Install Build Dependencies
-      working-directory: ./ # Bağımlılıklar ana dizinde kurulmalı
       run: |
         sudo apt update
         sudo apt install -y git build-essential dc rsync file wget cpio unzip bc bzr
 
     - name: Clone thinRoot
-      working-directory: ./ # Klonlama işlemi ana dizinde yapılmalı
       run: |
         git clone https://github.com/jens-maus/thinRoot.git
 
     - name: Compile ISO
       run: |
-        # Doğru dizinde kilitli olduğumuz için defconfig tıkır tıkır çalışacak
-        make thinroot_defconfig
+        # Klasör nerede olursa olsun 'make' komutunu thinRoot içinde çalışmaya zorluyoruz
+        make --directory=thinRoot thinroot_defconfig
         
-        # Derleme işlemi (Root haklarıyla)
-        sudo make
+        # Derleme işlemini de aynı klasörde root haklarıyla tetikliyoruz
+        sudo make --directory=thinRoot
 
     - name: Upload ISO Artifact
       uses: actions/upload-artifact@v4
