@@ -23,13 +23,18 @@ jobs:
 
     - name: Clone thinRoot
       run: |
-        git clone https://github.com/jens-maus/thinRoot.git
-
-    - name: Compile ISO
-      run: |
-        # 1. thinRoot klasörünün içine girip varsayılan konfigürasyonu yüklüyoruz
-        cd thinRoot
-        make defconfig
+        git clone https://github.com/jens-maus/thinRoot
         
-        # 2. Derleme işlemini root haklarıyla aynı klasörde başlatıyoruz
-        sudo make
+    - name: Compile thinRoot Release
+      run: |
+        cd thinRoot
+        # Senin paylaştığın o sihirli komut:
+        # Loop device ve dosya sistemi işlemleri için sudo ile tetikliyoruz
+        sudo make PRODUCT=generic-x86_64 release
+
+    - name: Upload Image Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: pure-thinroot-image
+        # Proje çıktıyı release klasörüne attığı için oradaki dosyayı topluyoruz
+        path: thinRoot/release/*.img
