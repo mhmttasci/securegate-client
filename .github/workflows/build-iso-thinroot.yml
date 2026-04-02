@@ -8,11 +8,14 @@ on:
 
 jobs:
   build-iso:
-    runs-on: ubuntu-24.04 # 2026 şartlarında güncel ve stabil LTS
+    runs-on: ubuntu-24.04 # Loglarında kullandığın ve stabil çalışan güncel LTS
 
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
+      with:
+        # Extraheader çakışmasını engellemek ve ilerde sorun yaşamamak için kritik ayar:
+        persist-credentials: false 
 
     - name: Install Build Dependencies
       run: |
@@ -21,14 +24,9 @@ jobs:
 
     - name: Clone thinRoot
       run: |
+        # Extraheader çatışmasını kestiğimiz için temiz bir klonlama yapar
         git clone https://github.com/jens-maus/thinRoot.git
         cd thinRoot
-
-    - name: Inject Custom Config & Scripts
-      run: |
-        # Buraya senin az önce yazdığımız securegate_client.sh dosyasını 
-        # thinRoot'un içine gömen 'cp' komutlarını yazacağız.
-        echo "Injecting custom securegate scripts..."
 
     - name: Compile ISO
       run: |
