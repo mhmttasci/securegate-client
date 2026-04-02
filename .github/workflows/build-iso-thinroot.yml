@@ -27,14 +27,9 @@ jobs:
 
     - name: Compile ISO
       run: |
-        # Klasör nerede olursa olsun 'make' komutunu thinRoot içinde çalışmaya zorluyoruz
-        make --directory=thinRoot thinroot_defconfig
+        # 1. thinRoot klasörünün içine girip varsayılan konfigürasyonu yüklüyoruz
+        cd thinRoot
+        make defconfig
         
-        # Derleme işlemini de aynı klasörde root haklarıyla tetikliyoruz
-        sudo make --directory=thinRoot
-
-    - name: Upload ISO Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: pure-thinroot-iso
-        path: thinRoot/output/images/thinroot.iso
+        # 2. Derleme işlemini root haklarıyla aynı klasörde başlatıyoruz
+        sudo make
