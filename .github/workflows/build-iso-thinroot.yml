@@ -8,31 +8,48 @@ on:
 
 jobs:
   build-iso:
-    runs-on: ubuntu-24.04 # Loglarında kullandığın ve stabil çalışan güncel LTS
+    runs-on: ubuntu-24.04 # En güncel ve stabil LTS
+
+    # Bütün komutların doğrudan thinRoot içinde çalışması için dizin kilitliyoruz
+    defaults:
+      run:
+        working-directory: ./thinRoot
 
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
       with:
-        # Extraheader çakışmasını engellemek ve ilerde sorun yaşamamak için kritik ayar:
-        persist-credentials: false 
+        persist-credentials: false # Gizli header çatışmasını engeller
+        path: main_repo # Kendi kodlarımızı bu klasöre çekiyoruz
 
     - name: Install Build Dependencies
+      working-directory: ./ # Bu adım ana dizinde çalışmalı
       run: |
         sudo apt update
         sudo apt install -y git build-essential dc rsync file wget cpio unzip bc bzr
 
     - name: Clone thinRoot
+      working-directory: ./ # Bu adım ana dizinde çalışmalı
       run: |
-        # Extraheader çatışmasını kestiğimiz için temiz bir klonlama yapar
         git clone https://github.com/jens-maus/thinRoot.git
-        cd thinRoot
+
+    - name: Inject Custom Client App (Sıkılaştırma & Kiosk)
+      run: |
+        # Klasörün varlığından emin oluyoruz
+        mkdir -p package/thinroot/iso-root/app/
+        
+        # Senin o muazzam HTML dosyanı ISO'nun içine Kiosk olarak basıyoruz
+        cp ../main_repo/securegate-client.html package/thinroot/iso-root/app/index.html
+        
+        echo "[✓] Frontend uygulaması thinRoot imajına enjekte edildi."
 
     - name: Compile ISO
       run: |
-        cd thinRoot
+        # Doğru dizinde olduğumuz için defconfig tıkır tıkır çalışacak
         make thinroot_defconfig
-        make
+        
+        # Root haklarıyla yetki (Permission) hatalarının önüne geçiyoruz
+        sudo make
 
     - name: Upload ISO Artifact
       uses: actions/upload-artifact@v4
