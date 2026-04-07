@@ -17,13 +17,28 @@ jobs:
       - name: Repoyu indir
         uses: actions/checkout@v4
 
-      - name: Araçları kur
+      - name: Araçları kur ve Debian keyring güncelle
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y \
             live-build xorriso grub-efi-amd64-bin grub-pc-bin \
-            mtools dosfstools squashfs-tools wget \
-            debootstrap debian-archive-keyring
+            mtools dosfstools squashfs-tools wget debootstrap
+
+          # Güncel Debian keyring'i indir
+          wget -q https://ftp-master.debian.org/keys/archive-key-12.asc -O /tmp/debian-key.asc
+          sudo gpg --dearmor -o /usr/share/keyrings/debian-archive-keyring.gpg /tmp/debian-key.asc
+          
+          # debootstrap'in kullandığı keyring'i de güncelle
+          wget -q https://ftp-master.debian.org/keys/archive-key-12.asc -O /tmp/debian-key.asc
+          sudo gpg --no-default-keyring \
+            --keyring /usr/share/keyrings/debian-archive-keyring.gpg \
+            --import /tmp/debian-key.asc 2>/dev/null || true
+
+          # Ek güvenlik keyring
+          wget -q https://ftp-master.debian.org/keys/archive-key-12-security.asc -O /tmp/debian-sec.asc
+          sudo gpg --no-default-keyring \
+            --keyring /usr/share/keyrings/debian-archive-keyring.gpg \
+            --import /tmp/debian-sec.asc 2>/dev/null || true
 
       - name: live-build yapılandır
         run: |
@@ -44,7 +59,8 @@ jobs:
             --mirror-chroot "http://deb.debian.org/debian/" \
             --mirror-binary "http://deb.debian.org/debian/" \
             --mirror-chroot-security "http://security.debian.org/debian-security/" \
-            --mirror-binary-security "http://security.debian.org/debian-security/"
+            --mirror-binary-security "http://security.debian.org/debian-security/" \
+            --keyring-packages "debian-archive-keyring"
 
       - name: Paket listesi
         run: |
@@ -74,21 +90,18 @@ jobs:
 
           cp index.html lb-config/config/includes.chroot/app/index.html
 
-          # systemd otomatik giriş (login yok)
           cat > lb-config/config/includes.chroot/etc/systemd/system/getty@tty1.service.d/autologin.conf << 'EOF'
           [Service]
           ExecStart=
           ExecStart=-/sbin/agetty --autologin root --noclear %I $TERM
           EOF
 
-          # root otomatik kiosk başlatıcı
           cat > lb-config/config/includes.chroot/root/.bash_profile << 'EOF'
           if [ "$(tty)" = "/dev/tty1" ]; then
             exec /usr/local/bin/start-kiosk >> /tmp/kiosk.log 2>&1
           fi
           EOF
 
-          # start-kiosk scripti
           cat > lb-config/config/includes.chroot/usr/local/bin/start-kiosk << 'EOF'
           #!/bin/bash
           export HOME=/root DISPLAY=:0
@@ -119,13 +132,11 @@ jobs:
           EndSection
           XCONF
 
-          echo "$(ts) Xorg baslatiliyor..." >> $LOG
           Xorg :0 vt1 -nocursor -nolisten tcp -config /etc/X11/xorg.conf >> /tmp/xorg.log 2>&1 &
           for i in $(seq 1 20); do
             DISPLAY=:0 xdpyinfo >/dev/null 2>&1 && break
             sleep 1
           done
-          echo "$(ts) X hazir" >> $LOG
 
           mkdir -p /root/.config/openbox
           cat > /root/.config/openbox/rc.xml << 'OBXML'
@@ -151,7 +162,6 @@ jobs:
           DISPLAY=:0 xset s off 2>/dev/null || true
           DISPLAY=:0 xset -dpms 2>/dev/null || true
 
-          echo "$(ts) Chromium baslatiliyor..." >> $LOG
           mkdir -p /tmp/cr-data
           DISPLAY=:0 chromium \
             --kiosk --no-sandbox --disable-infobars \
@@ -161,7 +171,6 @@ jobs:
             --user-data-dir=/tmp/cr-data --start-fullscreen \
             "$APP_URL" >> $LOG 2>&1
 
-          echo "$(ts) Chromium kapandi, yeniden..." >> $LOG
           sleep 3; exec "$0"
           EOF
           chmod 755 lb-config/config/includes.chroot/usr/local/bin/start-kiosk
@@ -170,7 +179,6 @@ jobs:
         run: |
           cd lb-config
           sudo lb build 2>&1 | tee /tmp/lb-build.log
-          echo "=== Dizin içeriği ==="
           ls -lah
 
       - name: ISO çıktısını hazırla
