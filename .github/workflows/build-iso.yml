@@ -1,12 +1,7 @@
-name: SecureGate ISO Builder (Debian Live)1
+name: SecureGate ISO Builder (Stable)
 
 on:
 workflow_dispatch:
-push:
-branches: [ main ]
-paths:
-- 'index.html'
-- '.github/workflows/build.yml'
 
 jobs:
 build:
@@ -15,145 +10,96 @@ timeout-minutes: 90
 
 ```
 steps:
-  - name: Repoyu indir
+  - name: Repo checkout
     uses: actions/checkout@v4
 
-  - name: Araçları kur ve Debian keyring güncelle
+  - name: Install dependencies
     run: |
-      sudo apt-get update -qq
+      sudo apt-get update
       sudo apt-get install -y \
-        live-build xorriso grub-efi-amd64-bin grub-pc-bin \
-        mtools dosfstools squashfs-tools wget debootstrap gnupg
+        live-build \
+        debootstrap \
+        squashfs-tools \
+        xorriso \
+        grub-pc-bin \
+        grub-efi-amd64-bin \
+        mtools \
+        dosfstools
 
-      wget -q https://ftp-master.debian.org/keys/archive-key-12.asc -O /tmp/debian-key.asc
-      sudo gpg --dearmor -o /usr/share/keyrings/debian-archive-keyring.gpg /tmp/debian-key.asc
-
-  - name: live-build yapılandır
+  - name: Configure live-build
     run: |
-      mkdir -p lb-config
-      cd lb-config
+      mkdir build
+      cd build
+
       lb config \
+        --mode debian \
         --distribution bookworm \
         --architectures amd64 \
         --binary-images iso-hybrid \
         --bootloader grub-efi \
         --debian-installer none \
-        --memtest none \
-        --win32-loader false \
-        --iso-volume "SECUREGATE" \
-        --apt-recommends false \
         --archive-areas "main contrib non-free non-free-firmware" \
-        --mirror-bootstrap "http://deb.debian.org/debian/" \
-        --mirror-chroot "http://deb.debian.org/debian/" \
-        --mirror-binary "http://deb.debian.org/debian/" \
-        --keyring-packages "debian-archive-keyring"
+        --apt-recommends false
 
-  - name: Paket listesi (FIXED)
+  - name: Add package list
     run: |
-      mkdir -p lb-config/config/package-lists
-      cat > lb-config/config/package-lists/kiosk.list.chroot << 'EOF'
+      mkdir -p build/config/package-lists
+
+      cat > build/config/package-lists/custom.list.chroot << 'EOF'
       linux-image-amd64
       live-boot
       systemd-sysv
-      chromium
       xorg
-      xserver-xorg
-      xserver-xorg-video-fbdev
-      xserver-xorg-video-vesa
-      xserver-xorg-input-evdev
       openbox
-      fonts-dejavu
-      dbus
+      chromium
       dbus-x11
-      x11-xserver-utils
       xinit
-      procps
+      x11-xserver-utils
       EOF
 
-  - name: Kiosk dosyaları oluştur
+  - name: Add kiosk autostart
     run: |
-      mkdir -p lb-config/config/includes.chroot/etc/systemd/system/getty@tty1.service.d
-      mkdir -p lb-config/config/includes.chroot/usr/local/bin
-      mkdir -p lb-config/config/includes.chroot/app
-      mkdir -p lb-config/config/includes.chroot/root
+      mkdir -p build/config/includes.chroot/root
 
-      cp index.html lb-config/config/includes.chroot/app/index.html
-
-      cat > lb-config/config/includes.chroot/etc/systemd/system/getty@tty1.service.d/autologin.conf << 'EOF'
-      [Service]
-      ExecStart=
-      ExecStart=-/sbin/agetty --autologin root --noclear %I $TERM
-      EOF
-
-      cat > lb-config/config/includes.chroot/root/.bash_profile << 'EOF'
-      if [ "$(tty)" = "/dev/tty1" ]; then
-        exec /usr/local/bin/start-kiosk >> /tmp/kiosk.log 2>&1
+      cat > build/config/includes.chroot/root/.bash_profile << 'EOF'
+      if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
+        startx
       fi
       EOF
 
-      cat > lb-config/config/includes.chroot/usr/local/bin/start-kiosk << 'EOF'
-      #!/bin/bash
-      export HOME=/root DISPLAY=:0
+      mkdir -p build/config/includes.chroot/root/.xinitrc
 
-      pgrep -x dbus-daemon >/dev/null || dbus-daemon --system --fork
-      sleep 1
-
-      Xorg :0 vt1 -nocursor -nolisten tcp &
-      sleep 3
-
-      DISPLAY=:0 openbox &
-      sleep 2
-
-      DISPLAY=:0 xset s off || true
-      DISPLAY=:0 xset -dpms || true
-
-      DISPLAY=:0 chromium \
-        --kiosk --no-sandbox --disable-infobars \
-        --disable-session-crashed-bubble --no-first-run \
-        --disable-translate --disable-gpu \
-        --user-data-dir=/tmp/chrome \
-        file:///app/index.html
-
-      while true; do sleep 60; done
+      cat > build/config/includes.chroot/root/.xinitrc << 'EOF'
+      xset -dpms
+      xset s off
+      openbox &
+      chromium --kiosk file:///root/index.html
       EOF
 
-      chmod +x lb-config/config/includes.chroot/usr/local/bin/start-kiosk
+      cp index.html build/config/includes.chroot/root/index.html
 
-  - name: ISO oluştur
+  - name: Build ISO
     run: |
-      cd lb-config
-      sudo lb build 2>&1 | tee /tmp/lb-build.log
-      ls -lah
+      cd build
+      sudo lb clean
+      sudo lb build
 
-  - name: ISO çıktısını hazırla
+  - name: Collect ISO
     run: |
-      mkdir -p output
-      ISO=$(find lb-config/ -maxdepth 1 -name "*.iso" 2>/dev/null | head -1)
+      mkdir output
+      ISO=$(find build -name "*.iso" | head -1)
 
       if [ -z "$ISO" ]; then
-        echo "=== ISO bulunamadı — son log ==="
-        tail -100 /tmp/lb-build.log
+        echo "ISO bulunamadı!"
         exit 1
       fi
 
-      DATE=$(date +%Y%m%d)
-      cp "$ISO" "output/securegate-debian-$DATE.iso"
+      cp "$ISO" output/securegate.iso
+      ls -lh output
 
-      sha256sum "output/securegate-debian-$DATE.iso" > output/SHA256SUMS.txt
-      ls -lh output/
-
-  - name: ISO artifact
+  - name: Upload ISO
     uses: actions/upload-artifact@v4
     with:
-      name: securegate-debian-${{ github.run_number }}
+      name: securegate-iso
       path: output/
-      retention-days: 30
-
-  - name: Build logu yükle (hata olursa)
-    if: failure()
-    uses: actions/upload-artifact@v4
-    with:
-      name: build-log-${{ github.run_number }}
-      path: /tmp/lb-build.log
-      retention-days: 7
 ```
