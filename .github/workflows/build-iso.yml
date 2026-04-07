@@ -1,4 +1,4 @@
-name: SecureGate ISO Builder (Debian Live) - 1
+name: SecureGate ISO Builder (Debian Live)
 
 on:
   workflow_dispatch:
@@ -66,6 +66,7 @@ jobs:
         run: |
           mkdir -p lb-config/config/package-lists
           cat > lb-config/config/package-lists/kiosk.list.chroot << 'EOF'
+          linux-image-amd64
           chromium
           xorg
           xserver-xorg
