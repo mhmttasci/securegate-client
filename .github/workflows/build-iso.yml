@@ -17,33 +17,24 @@ jobs:
       - name: Repoyu indir
         uses: actions/checkout@v4
 
-      - name: Araçları kur ve Debian keyring güncelle
+      - name: ISO oluştur (Debian container içinde)
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y \
+          # index.html'yi container'a taşı
+          cp index.html /tmp/index.html
+
+          docker run --rm --privileged \
+            -v /tmp/index.html:/work/index.html \
+            -v /tmp/output:/output \
+            debian:bookworm bash -e << 'DOCKERSCRIPT'
+
+          apt-get update -qq
+          apt-get install -y \
             live-build xorriso grub-efi-amd64-bin grub-pc-bin \
-            mtools dosfstools squashfs-tools wget debootstrap
+            mtools dosfstools squashfs-tools wget debootstrap \
+            debian-archive-keyring 2>&1 | tail -5
 
-          # Güncel Debian keyring'i indir
-          wget -q https://ftp-master.debian.org/keys/archive-key-12.asc -O /tmp/debian-key.asc
-          sudo gpg --dearmor -o /usr/share/keyrings/debian-archive-keyring.gpg /tmp/debian-key.asc
-          
-          # debootstrap'in kullandığı keyring'i de güncelle
-          wget -q https://ftp-master.debian.org/keys/archive-key-12.asc -O /tmp/debian-key.asc
-          sudo gpg --no-default-keyring \
-            --keyring /usr/share/keyrings/debian-archive-keyring.gpg \
-            --import /tmp/debian-key.asc 2>/dev/null || true
+          mkdir -p /lb && cd /lb
 
-          # Ek güvenlik keyring
-          wget -q https://ftp-master.debian.org/keys/archive-key-12-security.asc -O /tmp/debian-sec.asc
-          sudo gpg --no-default-keyring \
-            --keyring /usr/share/keyrings/debian-archive-keyring.gpg \
-            --import /tmp/debian-sec.asc 2>/dev/null || true
-
-      - name: live-build yapılandır
-        run: |
-          mkdir -p lb-config
-          cd lb-config
           lb config \
             --distribution bookworm \
             --architectures amd64 \
@@ -54,21 +45,13 @@ jobs:
             --win32-loader false \
             --iso-volume "SECUREGATE" \
             --apt-recommends false \
-            --security false \
-            --linux-packages linux-image \
-            --linux-flavours amd64 \
             --mirror-bootstrap "http://deb.debian.org/debian/" \
             --mirror-chroot "http://deb.debian.org/debian/" \
-            --mirror-binary "http://deb.debian.org/debian/" \
-            --mirror-chroot-security "http://security.debian.org/debian-security/" \
-            --mirror-binary-security "http://security.debian.org/debian-security/" \
-            --keyring-packages "debian-archive-keyring"
+            --mirror-binary "http://deb.debian.org/debian/"
 
-      - name: Paket listesi
-        run: |
-          mkdir -p lb-config/config/package-lists
-          cat > lb-config/config/package-lists/kiosk.list.chroot << 'EOF'
-          linux-image-amd64
+          # Paket listesi
+          mkdir -p config/package-lists
+          cat > config/package-lists/kiosk.list.chroot << 'EOF'
           chromium
           xorg
           xserver-xorg
@@ -84,36 +67,33 @@ jobs:
           procps
           EOF
 
-      - name: Kiosk dosyaları oluştur
-        run: |
-          mkdir -p lb-config/config/includes.chroot/etc/systemd/system/getty@tty1.service.d
-          mkdir -p lb-config/config/includes.chroot/usr/local/bin
-          mkdir -p lb-config/config/includes.chroot/app
-          mkdir -p lb-config/config/includes.chroot/root
+          # Kiosk dosyaları
+          mkdir -p config/includes.chroot/etc/systemd/system/getty@tty1.service.d
+          mkdir -p config/includes.chroot/usr/local/bin
+          mkdir -p config/includes.chroot/app
+          mkdir -p config/includes.chroot/root
 
-          cp index.html lb-config/config/includes.chroot/app/index.html
+          cp /work/index.html config/includes.chroot/app/index.html
 
-          cat > lb-config/config/includes.chroot/etc/systemd/system/getty@tty1.service.d/autologin.conf << 'EOF'
+          cat > config/includes.chroot/etc/systemd/system/getty@tty1.service.d/autologin.conf << 'EOF'
           [Service]
           ExecStart=
           ExecStart=-/sbin/agetty --autologin root --noclear %I $TERM
           EOF
 
-          cat > lb-config/config/includes.chroot/root/.bash_profile << 'EOF'
+          cat > config/includes.chroot/root/.bash_profile << 'EOF'
           if [ "$(tty)" = "/dev/tty1" ]; then
             exec /usr/local/bin/start-kiosk >> /tmp/kiosk.log 2>&1
           fi
           EOF
 
-          cat > lb-config/config/includes.chroot/usr/local/bin/start-kiosk << 'EOF'
+          cat > config/includes.chroot/usr/local/bin/start-kiosk << 'EOF'
           #!/bin/bash
           export HOME=/root DISPLAY=:0
           LOG=/tmp/kiosk.log
           ts() { date '+%H:%M:%S'; }
           echo "" >> $LOG
           echo "=== $(ts) SecureGate Kiosk ===" >> $LOG
-
-          APP_URL="file:///app/index.html"
 
           pgrep -x dbus-daemon >/dev/null || dbus-daemon --system --fork >> $LOG 2>&1 || true
           sleep 1
@@ -172,40 +152,35 @@ jobs:
             --disable-translate --disable-features=TranslateUI \
             --disable-pinch --disable-gpu --in-process-gpu \
             --user-data-dir=/tmp/cr-data --start-fullscreen \
-            "$APP_URL" >> $LOG 2>&1
+            "file:///app/index.html" >> $LOG 2>&1
 
           sleep 3; exec "$0"
           EOF
-          chmod 755 lb-config/config/includes.chroot/usr/local/bin/start-kiosk
+          chmod 755 config/includes.chroot/usr/local/bin/start-kiosk
 
-      - name: ISO oluştur
-        run: |
-          cd lb-config
-          sudo lb build 2>&1 | tee /tmp/lb-build.log
-          ls -lah
+          # Build
+          lb build 2>&1
+
+          # ISO çıktısı
+          mkdir -p /output
+          ISO=$(find /lb -maxdepth 1 -name "*.iso" | head -1)
+          if [ -z "$ISO" ]; then
+            echo "HATA: ISO bulunamadı"
+            ls -la /lb/
+            exit 1
+          fi
+          cp "$ISO" /output/securegate-debian.iso
+          echo "ISO hazır: $(du -sh /output/securegate-debian.iso)"
+          DOCKERSCRIPT
 
       - name: ISO çıktısını hazırla
         run: |
           mkdir -p output
-          ISO=$(find lb-config/ -maxdepth 1 -name "*.iso" 2>/dev/null | head -1)
-          if [ -z "$ISO" ]; then
-            echo "=== ISO bulunamadı — son log ==="
-            tail -100 /tmp/lb-build.log
-            exit 1
-          fi
+          ls -lh /tmp/output/
           DATE=$(date +%Y%m%d)
-          cp "$ISO" "output/securegate-debian-$DATE.iso"
-          ls -lh output/
-          sha256sum "output/securegate-debian-$DATE.iso" > output/SHA256SUMS.txt
+          cp /tmp/output/securegate-debian.iso output/securegate-debian-$DATE.iso
+          sha256sum output/securegate-debian-$DATE.iso > output/SHA256SUMS.txt
           cat output/SHA256SUMS.txt
-
-      - name: Build logu yükle (hata olursa)
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-log-${{ github.run_number }}
-          path: /tmp/lb-build.log
-          retention-days: 7
 
       - name: ISO artifact
         uses: actions/upload-artifact@v4
