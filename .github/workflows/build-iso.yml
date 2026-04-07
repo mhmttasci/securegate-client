@@ -2,78 +2,240 @@ name: SecureGate ISO Builder
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'index.html'
+      - '.github/workflows/build.yml'
 
 jobs:
   build:
     runs-on: ubuntu-22.04
+    timeout-minutes: 60
 
     steps:
       - name: Repoyu indir
         uses: actions/checkout@v4
 
-      - name: Build araçlarını kur
+      - name: Araçları kur
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y \
-            xorriso grub-pc-bin grub-efi-amd64-bin \
-            isolinux syslinux syslinux-common \
-            mtools dosfstools openssl
+            xorriso grub-efi-amd64-bin isolinux syslinux \
+            syslinux-common mtools dosfstools wget
 
-      - name: Klasör yapısını hazırla
+      - name: Alpine ISO indir ve çıkart
+        run: |
+          wget -q --show-progress \
+            "https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/x86_64/alpine-standard-3.19.1-x86_64.iso" \
+            -O alpine.iso
+          mkdir -p iso-root
+          xorriso -osirrox on -indev alpine.iso -extract / iso-root/ -- 2>&1 | tail -2
+
+      - name: Chromium paketlerini indir
+        run: |
+          mkdir -p apk-cache
+          cat > dl.sh << 'EOF'
+          #!/bin/sh
+          apk update -q
+          apk fetch --recursive --output /cache \
+            chromium xorg-server xf86-input-evdev xf86-input-synaptics \
+            xf86-video-fbdev xf86-video-vesa xf86-video-modesetting \
+            openbox font-dejavu dbus dbus-openrc eudev eudev-openrc \
+            xset xdpyinfo util-linux
+          echo "İndirilen: $(ls /cache/*.apk | wc -l)"
+          EOF
+          docker run --rm \
+            -v "$PWD/apk-cache:/cache" \
+            -v "$PWD/dl.sh:/dl.sh" \
+            alpine:3.19 sh /dl.sh
+
+      - name: APKINDEX oluştur
+        run: |
+          mkdir -p iso-root/packages
+          cp apk-cache/*.apk iso-root/packages/
+          docker run --rm \
+            -v "$PWD/iso-root/packages:/pkg" \
+            alpine:3.19 sh -c \
+            "apk index --no-warnings -o /pkg/APKINDEX.tar.gz /pkg/*.apk 2>/dev/null"
+
+      - name: Uygulama yerleştir
         run: |
           mkdir -p iso-root/app
-          mkdir -p iso-root/boot/grub
-          mkdir -p iso-root/boot/isolinux
-          mkdir -p iso-root/EFI/BOOT
-          mkdir -p iso-root/system
-          mkdir -p certs
-          mkdir -p output
-
-      - name: Uygulama dosyasını yerleştir
-        run: |
-          # Repodaki index.html'i kullan
           cp index.html iso-root/app/index.html
-          echo "Kopyalandı: $(wc -c < iso-root/app/index.html) byte"
 
-      - name: GRUB config oluştur
+      - name: Overlay oluştur
         run: |
-          cat > iso-root/boot/grub/grub.cfg << 'GRUBEOF'
-          set default=0
-          set timeout=3
-          menuentry "SecureGate Zero Trust Kiosk" {
-            linux  /boot/vmlinuz boot=live quiet splash
-            initrd /boot/initrd.img
-          }
-          GRUBEOF
+          mkdir -p ovl/etc ovl/root ovl/usr/local/bin ovl/app
+          cp index.html ovl/app/index.html
 
-          cp iso-root/boot/grub/grub.cfg iso-root/EFI/BOOT/grub.cfg
+          # inittab — getty --autologin root (login yok)
+          cat > ovl/etc/inittab << 'EOF'
+          ::sysinit:/sbin/openrc sysinit
+          ::sysinit:/sbin/openrc boot
+          ::wait:/sbin/openrc default
+          tty1::respawn:/sbin/getty --autologin root 38400 tty1
+          tty2::respawn:/sbin/getty 38400 tty2
+          ::ctrlaltdel:/sbin/reboot
+          ::shutdown:/sbin/openrc shutdown
+          EOF
 
-      - name: Sistem scriptlerini oluştur
-        run: |
-          cat > iso-root/system/sg-kiosk-start.sh << 'SYSEOF'
-          #!/bin/bash
-          Xorg :0 -nocursor &
-          sleep 2
-          export DISPLAY=:0
-          openbox &
+          # .profile — tty1'de kiosk başlat
+          cat > ovl/root/.profile << 'EOF'
+          [ "$(tty)" = "/dev/tty1" ] || return 0
+          exec /usr/local/bin/start-kiosk >> /tmp/kiosk.log 2>&1
+          EOF
+
+          # start-kiosk scripti
+          cat > ovl/usr/local/bin/start-kiosk << 'KIOSK'
+          #!/bin/sh
+          export HOME=/root DISPLAY=:0
+          LOG=/tmp/kiosk.log
+          ts() { date '+%H:%M:%S'; }
+          echo "" >> $LOG
+          echo "=== $(ts) SecureGate Kiosk ===" >> $LOG
+
+          PKG_DIR=""; MEDIA_ROOT=""
+          for i in $(seq 1 30); do
+            for d in /media/cdrom /media/sr0 /media/sda /media/sdb /media/SECUREGATE /media/usb; do
+              if [ -f "$d/packages/APKINDEX.tar.gz" ]; then
+                PKG_DIR="$d/packages"; MEDIA_ROOT="$d"
+                echo "$(ts) Medya: $d" >> $LOG; break 2
+              fi
+            done
+            sleep 1
+          done
+
+          [ -z "$PKG_DIR" ] && { echo "$(ts) HATA: Medya yok" >> $LOG; sleep 30; exec "$0"; }
+
+          if ! command -v openbox >/dev/null 2>&1; then
+            echo "$(ts) Paketler kuruluyor..." >> $LOG
+            printf 'file://%s\n' "$PKG_DIR" > /etc/apk/repositories
+            apk add --no-network --allow-untrusted \
+              chromium xorg-server xf86-input-evdev xf86-video-fbdev \
+              xf86-video-vesa xf86-video-modesetting openbox font-dejavu \
+              dbus dbus-openrc eudev eudev-openrc xset xdpyinfo >> $LOG 2>&1
+          fi
+
+          for b in openbox Xorg chromium-browser; do
+            command -v "$b" >/dev/null 2>&1 || { echo "$(ts) HATA: $b yok" >> $LOG; sleep 15; exec "$0"; }
+          done
+
+          APP_URL="file:///app/index.html"
+          for f in /app/index.html "$MEDIA_ROOT/app/index.html"; do
+            [ -f "$f" ] && APP_URL="file://$f" && break
+          done
+
+          mkdir -p /run/dbus
+          dbus-daemon --system --fork >> $LOG 2>&1 || true
           sleep 1
-          chromium-browser --kiosk file:///app/index.htmll
-          SYSEOF
-          chmod +x iso-root/system/sg-kiosk-start.sh
 
-          # Placeholder kernel dosyaları (gerçek build için değiştirilmeli)
-          touch iso-root/boot/vmlinuz
-          touch iso-root/boot/initrd.img
+          mkdir -p /etc/X11
+          cat > /etc/X11/xorg.conf << 'XCONF'
+          Section "ServerFlags"
+            Option "DontZap" "true"
+            Option "DontVTSwitch" "true"
+          EndSection
+          Section "Device"
+            Identifier "Card0"
+            Driver "fbdev"
+          EndSection
+          Section "Screen"
+            Identifier "Screen0"
+            Device "Card0"
+            DefaultDepth 24
+          EndSection
+          XCONF
+
+          Xorg :0 vt1 -nocursor -nolisten tcp -config /etc/X11/xorg.conf >> /tmp/xorg.log 2>&1 &
+          for i in $(seq 1 20); do DISPLAY=:0 xdpyinfo >/dev/null 2>&1 && break; sleep 1; done
+
+          mkdir -p /root/.config/openbox
+          cat > /root/.config/openbox/rc.xml << 'OBXML'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <openbox_config>
+            <keyboard>
+              <keybind key="A-F4"><action name="Nothing"/></keybind>
+              <keybind key="A-Tab"><action name="Nothing"/></keybind>
+              <keybind key="C-A-t"><action name="Nothing"/></keybind>
+            </keyboard>
+            <mouse><context name="Root"/></mouse>
+            <applications>
+              <application class="*"><decor>no</decor><maximized>yes</maximized></application>
+            </applications>
+          </openbox_config>
+          OBXML
+
+          DISPLAY=:0 openbox --config-file /root/.config/openbox/rc.xml &
+          sleep 2
+          DISPLAY=:0 xset s off 2>/dev/null
+          DISPLAY=:0 xset -dpms 2>/dev/null
+
+          mkdir -p /tmp/cr
+          DISPLAY=:0 chromium-browser \
+            --kiosk --no-sandbox --disable-infobars \
+            --disable-session-crashed-bubble --no-first-run \
+            --disable-translate --disable-features=TranslateUI \
+            --disable-pinch --disable-gpu --in-process-gpu \
+            --user-data-dir=/tmp/cr --start-fullscreen \
+            "$APP_URL" >> $LOG 2>&1
+
+          sleep 3; exec "$0"
+          KIOSK
+          chmod 755 ovl/usr/local/bin/start-kiosk
+
+          # apkovl oluştur
+          tar -czf localhost.apkovl.tar.gz \
+            --owner=root --group=root --numeric-owner \
+            -C ovl . || exit 1
+          cp localhost.apkovl.tar.gz iso-root/localhost.apkovl.tar.gz
+          echo "apkovl: $(du -sh iso-root/localhost.apkovl.tar.gz)"
+
+      - name: EFI image oluştur
+        run: |
+          mkdir -p efi
+          grub-mkstandalone \
+            --format=x86_64-efi \
+            --output=efi/bootx64.efi \
+            --modules="linux iso9660" \
+            "boot/grub/grub.cfg=iso-root/boot/grub/grub.cfg"
+
+          EFI_SIZE=$(du -sm efi/bootx64.efi | cut -f1)
+          FAT_SIZE=$((EFI_SIZE + 8))
+          dd if=/dev/zero of=efi/efiboot.img bs=1M count="${FAT_SIZE}" status=none
+          mkfs.fat -F 16 -n "EFIBOOT" efi/efiboot.img > /dev/null
+          mmd -i efi/efiboot.img ::/EFI
+          mmd -i efi/efiboot.img ::/EFI/BOOT
+          mcopy -i efi/efiboot.img efi/bootx64.efi ::/EFI/BOOT/bootx64.efi
 
       - name: ISO oluştur
         run: |
-          chmod +x scripts/build-iso.sh
-          sudo bash scripts/build-iso.sh output/securegate-$(date +%Y%m%d).iso || true
-          ls -lh output/
+          mkdir -p output
+          OUTPUT="output/securegate-$(date +%Y%m%d).iso"
 
-      - name: Artifact kaydet
+          xorriso -as mkisofs \
+            -iso-level 3 -full-iso9660-filenames \
+            -volid "SECUREGATE" \
+            -eltorito-boot boot/syslinux/isolinux.bin \
+            -eltorito-catalog boot/syslinux/boot.cat \
+            -no-emul-boot -boot-load-size 4 -boot-info-table \
+            --eltorito-alt-boot \
+            -e boot/efiboot.img \
+            -no-emul-boot \
+            -isohybrid-mbr iso-root/boot/syslinux/isohdpfx.bin \
+            -output "$OUTPUT" \
+            -graft-points \
+              "$PWD/iso-root" \
+              "boot/efiboot.img=$PWD/efi/efiboot.img"
+
+          echo "=== ISO ==="
+          ls -lh output/
+          sha256sum "$OUTPUT" > output/SHA256SUMS.txt
+          cat output/SHA256SUMS.txt
+
+      - name: ISO'yu yükle (Artifact)
         uses: actions/upload-artifact@v4
         with:
-          name: securegate-iso
+          name: securegate-iso-${{ github.run_number }}
           path: output/
           retention-days: 30
