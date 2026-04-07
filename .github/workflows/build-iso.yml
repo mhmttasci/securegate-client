@@ -48,8 +48,7 @@ jobs:
             --win32-loader false \
             --iso-volume "SECUREGATE" \
             --apt-recommends false \
-            --security false \
-            --updates true
+            --security false
 
       - name: Paket listesi ekle
         run: |
