@@ -22,7 +22,8 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y \
             live-build xorriso grub-efi-amd64-bin grub-pc-bin \
-            mtools dosfstools squashfs-tools wget debootstrap
+            mtools dosfstools squashfs-tools wget \
+            debootstrap debian-archive-keyring
 
       - name: live-build yapılandır
         run: |
@@ -38,7 +39,12 @@ jobs:
             --win32-loader false \
             --iso-volume "SECUREGATE" \
             --apt-recommends false \
-            --security false
+            --security false \
+            --mirror-bootstrap "http://deb.debian.org/debian/" \
+            --mirror-chroot "http://deb.debian.org/debian/" \
+            --mirror-binary "http://deb.debian.org/debian/" \
+            --mirror-chroot-security "http://security.debian.org/debian-security/" \
+            --mirror-binary-security "http://security.debian.org/debian-security/"
 
       - name: Paket listesi
         run: |
@@ -61,31 +67,28 @@ jobs:
 
       - name: Kiosk dosyaları oluştur
         run: |
-          # Dizinler
           mkdir -p lb-config/config/includes.chroot/etc/systemd/system/getty@tty1.service.d
           mkdir -p lb-config/config/includes.chroot/usr/local/bin
           mkdir -p lb-config/config/includes.chroot/app
           mkdir -p lb-config/config/includes.chroot/root
-          mkdir -p lb-config/config/includes.chroot/etc/xdg/openbox
 
-          # Uygulama
           cp index.html lb-config/config/includes.chroot/app/index.html
 
-          # systemd otomatik giriş
+          # systemd otomatik giriş (login yok)
           cat > lb-config/config/includes.chroot/etc/systemd/system/getty@tty1.service.d/autologin.conf << 'EOF'
           [Service]
           ExecStart=
           ExecStart=-/sbin/agetty --autologin root --noclear %I $TERM
           EOF
 
-          # root .bash_profile
+          # root otomatik kiosk başlatıcı
           cat > lb-config/config/includes.chroot/root/.bash_profile << 'EOF'
           if [ "$(tty)" = "/dev/tty1" ]; then
             exec /usr/local/bin/start-kiosk >> /tmp/kiosk.log 2>&1
           fi
           EOF
 
-          # start-kiosk
+          # start-kiosk scripti
           cat > lb-config/config/includes.chroot/usr/local/bin/start-kiosk << 'EOF'
           #!/bin/bash
           export HOME=/root DISPLAY=:0
@@ -95,7 +98,6 @@ jobs:
           echo "=== $(ts) SecureGate Kiosk ===" >> $LOG
 
           APP_URL="file:///app/index.html"
-          [ -f "/app/index.html" ] && APP_URL="file:///app/index.html"
 
           pgrep -x dbus-daemon >/dev/null || dbus-daemon --system --fork >> $LOG 2>&1 || true
           sleep 1
@@ -164,26 +166,22 @@ jobs:
           EOF
           chmod 755 lb-config/config/includes.chroot/usr/local/bin/start-kiosk
 
-      - name: ISO oluştur (sudo lb build)
+      - name: ISO oluştur
         run: |
           cd lb-config
           sudo lb build 2>&1 | tee /tmp/lb-build.log
-          echo "=== lb-config dizini ==="
+          echo "=== Dizin içeriği ==="
           ls -lah
 
       - name: ISO çıktısını hazırla
         run: |
           mkdir -p output
-
-          # live-build ISO'yu lb-config/ içinde üretir
           ISO=$(find lb-config/ -maxdepth 1 -name "*.iso" 2>/dev/null | head -1)
-
           if [ -z "$ISO" ]; then
-            echo "=== ISO bulunamadı, son 100 satır log ==="
+            echo "=== ISO bulunamadı — son log ==="
             tail -100 /tmp/lb-build.log
             exit 1
           fi
-
           DATE=$(date +%Y%m%d)
           cp "$ISO" "output/securegate-debian-$DATE.iso"
           ls -lh output/
