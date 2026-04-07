@@ -1,4 +1,4 @@
-name: SecureGate ISO Builder (Stable)
+name: SecureGate ISO Builder
 
 on:
 workflow_dispatch:
@@ -10,7 +10,7 @@ timeout-minutes: 90
 
 ```
 steps:
-  - name: Repo checkout
+  - name: Checkout
     uses: actions/checkout@v4
 
   - name: Install dependencies
@@ -41,7 +41,7 @@ steps:
         --archive-areas "main contrib non-free non-free-firmware" \
         --apt-recommends false
 
-  - name: Add package list
+  - name: Add packages
     run: |
       mkdir -p build/config/package-lists
 
@@ -57,7 +57,7 @@ steps:
       x11-xserver-utils
       EOF
 
-  - name: Add kiosk autostart
+  - name: Add kiosk
     run: |
       mkdir -p build/config/includes.chroot/root
 
@@ -66,8 +66,6 @@ steps:
         startx
       fi
       EOF
-
-      mkdir -p build/config/includes.chroot/root/.xinitrc
 
       cat > build/config/includes.chroot/root/.xinitrc << 'EOF'
       xset -dpms
@@ -90,7 +88,7 @@ steps:
       ISO=$(find build -name "*.iso" | head -1)
 
       if [ -z "$ISO" ]; then
-        echo "ISO bulunamadı!"
+        echo "ISO bulunamadı"
         exit 1
       fi
 
