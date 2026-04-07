@@ -1,4 +1,4 @@
-name: SecureGate ISO Builder
+name: build-iso
 
 on:
 workflow_dispatch:
@@ -6,98 +6,35 @@ workflow_dispatch:
 jobs:
 build:
 runs-on: ubuntu-22.04
-timeout-minutes: 90
 
 ```
 steps:
-  - name: Checkout
-    uses: actions/checkout@v4
+  - uses: actions/checkout@v4
 
-  - name: Install dependencies
-    run: |
-      sudo apt-get update
-      sudo apt-get install -y \
-        live-build \
-        debootstrap \
-        squashfs-tools \
-        xorriso \
-        grub-pc-bin \
-        grub-efi-amd64-bin \
-        mtools \
-        dosfstools
+  - run: sudo apt-get update
 
-  - name: Configure live-build
-    run: |
+  - run: sudo apt-get install -y live-build debootstrap squashfs-tools xorriso grub-pc-bin grub-efi-amd64-bin mtools dosfstools
+
+  - run: |
       mkdir build
       cd build
+      lb config --mode debian --distribution bookworm --architectures amd64 --binary-images iso-hybrid
 
-      lb config \
-        --mode debian \
-        --distribution bookworm \
-        --architectures amd64 \
-        --binary-images iso-hybrid \
-        --bootloader grub-efi \
-        --debian-installer none \
-        --archive-areas "main contrib non-free non-free-firmware" \
-        --apt-recommends false
-
-  - name: Add packages
-    run: |
+  - run: |
       mkdir -p build/config/package-lists
+      echo "linux-image-amd64" > build/config/package-lists/custom.list.chroot
+      echo "live-boot" >> build/config/package-lists/custom.list.chroot
 
-      cat > build/config/package-lists/custom.list.chroot << 'EOF'
-      linux-image-amd64
-      live-boot
-      systemd-sysv
-      xorg
-      openbox
-      chromium
-      dbus-x11
-      xinit
-      x11-xserver-utils
-      EOF
-
-  - name: Add kiosk
-    run: |
-      mkdir -p build/config/includes.chroot/root
-
-      cat > build/config/includes.chroot/root/.bash_profile << 'EOF'
-      if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
-        startx
-      fi
-      EOF
-
-      cat > build/config/includes.chroot/root/.xinitrc << 'EOF'
-      xset -dpms
-      xset s off
-      openbox &
-      chromium --kiosk file:///root/index.html
-      EOF
-
-      cp index.html build/config/includes.chroot/root/index.html
-
-  - name: Build ISO
-    run: |
+  - run: |
       cd build
-      sudo lb clean
       sudo lb build
 
-  - name: Collect ISO
-    run: |
+  - run: |
       mkdir output
-      ISO=$(find build -name "*.iso" | head -1)
+      find build -name "*.iso" -exec cp {} output/securegate.iso \;
 
-      if [ -z "$ISO" ]; then
-        echo "ISO bulunamadı"
-        exit 1
-      fi
-
-      cp "$ISO" output/securegate.iso
-      ls -lh output
-
-  - name: Upload ISO
-    uses: actions/upload-artifact@v4
+  - uses: actions/upload-artifact@v4
     with:
-      name: securegate-iso
+      name: iso
       path: output/
 ```
