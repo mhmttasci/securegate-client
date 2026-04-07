@@ -21,23 +21,13 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y \
-            live-build \
-            xorriso \
-            grub-efi-amd64-bin \
-            grub-pc-bin \
-            mtools \
-            dosfstools \
-            squashfs-tools \
-            wget \
-            debootstrap \
-            syslinux-utils
+            live-build xorriso grub-efi-amd64-bin grub-pc-bin \
+            mtools dosfstools squashfs-tools wget debootstrap
 
-      - name: live-build yapılandırması oluştur
+      - name: live-build yapılandır
         run: |
           mkdir -p lb-config
           cd lb-config
-
-          # live-build başlat
           lb config \
             --distribution bookworm \
             --architectures amd64 \
@@ -50,80 +40,66 @@ jobs:
             --apt-recommends false \
             --security false
 
-      - name: Paket listesi ekle
+      - name: Paket listesi
         run: |
           mkdir -p lb-config/config/package-lists
           cat > lb-config/config/package-lists/kiosk.list.chroot << 'EOF'
           chromium
-          chromium-sandbox
           xorg
           xserver-xorg
           xserver-xorg-video-fbdev
           xserver-xorg-video-vesa
           xserver-xorg-input-evdev
-          xserver-xorg-input-synaptics
           openbox
           fonts-dejavu
-          fonts-noto
           dbus
           dbus-x11
-          udev
-          xdotool
           x11-xserver-utils
           xinit
           procps
           EOF
 
-      - name: Otomatik giriş ve kiosk yapılandırması
+      - name: Kiosk dosyaları oluştur
         run: |
+          # Dizinler
           mkdir -p lb-config/config/includes.chroot/etc/systemd/system/getty@tty1.service.d
           mkdir -p lb-config/config/includes.chroot/usr/local/bin
           mkdir -p lb-config/config/includes.chroot/app
+          mkdir -p lb-config/config/includes.chroot/root
           mkdir -p lb-config/config/includes.chroot/etc/xdg/openbox
 
-          # index.html uygulama dosyası
+          # Uygulama
           cp index.html lb-config/config/includes.chroot/app/index.html
 
-          # systemd: tty1 otomatik root girişi (şifresiz)
+          # systemd otomatik giriş
           cat > lb-config/config/includes.chroot/etc/systemd/system/getty@tty1.service.d/autologin.conf << 'EOF'
           [Service]
           ExecStart=
           ExecStart=-/sbin/agetty --autologin root --noclear %I $TERM
           EOF
 
-          # root .bash_profile: tty1'de kiosk başlat
-          mkdir -p lb-config/config/includes.chroot/root
+          # root .bash_profile
           cat > lb-config/config/includes.chroot/root/.bash_profile << 'EOF'
           if [ "$(tty)" = "/dev/tty1" ]; then
             exec /usr/local/bin/start-kiosk >> /tmp/kiosk.log 2>&1
           fi
           EOF
 
-          # start-kiosk scripti
-          cat > lb-config/config/includes.chroot/usr/local/bin/start-kiosk << 'KIOSK'
+          # start-kiosk
+          cat > lb-config/config/includes.chroot/usr/local/bin/start-kiosk << 'EOF'
           #!/bin/bash
-          export HOME=/root
-          export DISPLAY=:0
+          export HOME=/root DISPLAY=:0
           LOG=/tmp/kiosk.log
           ts() { date '+%H:%M:%S'; }
-
           echo "" >> $LOG
-          echo "=== $(ts) SecureGate Kiosk (Debian Live) ===" >> $LOG
+          echo "=== $(ts) SecureGate Kiosk ===" >> $LOG
 
-          # Uygulama dosyasını bul
           APP_URL="file:///app/index.html"
-          for f in /app/index.html /media/cdrom/app/index.html /media/*/app/index.html; do
-            [ -f "$f" ] && APP_URL="file://$f" && break
-          done
-          echo "$(ts) URL: $APP_URL" >> $LOG
+          [ -f "/app/index.html" ] && APP_URL="file:///app/index.html"
 
-          # dbus
-          if ! pgrep -x dbus-daemon > /dev/null; then
-            dbus-daemon --system --fork >> $LOG 2>&1 || true
-          fi
+          pgrep -x dbus-daemon >/dev/null || dbus-daemon --system --fork >> $LOG 2>&1 || true
           sleep 1
 
-          # Xorg config
           mkdir -p /etc/X11
           cat > /etc/X11/xorg.conf << 'XCONF'
           Section "ServerFlags"
@@ -141,18 +117,14 @@ jobs:
           EndSection
           XCONF
 
-          # Xorg başlat
-          echo "$(ts) Xorg başlatılıyor..." >> $LOG
-          Xorg :0 vt1 -nocursor -nolisten tcp -config /etc/X11/xorg.conf \
-            >> /tmp/xorg.log 2>&1 &
-
+          echo "$(ts) Xorg baslatiliyor..." >> $LOG
+          Xorg :0 vt1 -nocursor -nolisten tcp -config /etc/X11/xorg.conf >> /tmp/xorg.log 2>&1 &
           for i in $(seq 1 20); do
             DISPLAY=:0 xdpyinfo >/dev/null 2>&1 && break
             sleep 1
           done
-          echo "$(ts) X hazır" >> $LOG
+          echo "$(ts) X hazir" >> $LOG
 
-          # Openbox config
           mkdir -p /root/.config/openbox
           cat > /root/.config/openbox/rc.xml << 'OBXML'
           <?xml version="1.0" encoding="UTF-8"?>
@@ -161,8 +133,6 @@ jobs:
               <keybind key="A-F4"><action name="Nothing"/></keybind>
               <keybind key="A-Tab"><action name="Nothing"/></keybind>
               <keybind key="C-A-t"><action name="Nothing"/></keybind>
-              <keybind key="Super_L"><action name="Nothing"/></keybind>
-              <keybind key="C-A-Delete"><action name="Nothing"/></keybind>
             </keyboard>
             <mouse><context name="Root"/></mouse>
             <applications>
@@ -174,84 +144,63 @@ jobs:
           </openbox_config>
           OBXML
 
-          echo "$(ts) Openbox başlatılıyor..." >> $LOG
           DISPLAY=:0 openbox --config-file /root/.config/openbox/rc.xml &
           sleep 2
-
           DISPLAY=:0 xset s off 2>/dev/null || true
           DISPLAY=:0 xset -dpms 2>/dev/null || true
-          DISPLAY=:0 xset s noblank 2>/dev/null || true
 
-          # Chromium kiosk (Debian'da "chromium", Alpine'daki gibi -browser suffix yok)
-          echo "$(ts) Chromium başlatılıyor: $APP_URL" >> $LOG
+          echo "$(ts) Chromium baslatiliyor..." >> $LOG
           mkdir -p /tmp/cr-data
-
           DISPLAY=:0 chromium \
-            --kiosk \
-            --no-sandbox \
-            --disable-infobars \
-            --disable-session-crashed-bubble \
-            --no-first-run \
-            --disable-translate \
-            --disable-features=TranslateUI \
-            --disable-pinch \
-            --overscroll-history-navigation=0 \
-            --disable-gpu \
-            --in-process-gpu \
-            --user-data-dir=/tmp/cr-data \
-            --start-fullscreen \
+            --kiosk --no-sandbox --disable-infobars \
+            --disable-session-crashed-bubble --no-first-run \
+            --disable-translate --disable-features=TranslateUI \
+            --disable-pinch --disable-gpu --in-process-gpu \
+            --user-data-dir=/tmp/cr-data --start-fullscreen \
             "$APP_URL" >> $LOG 2>&1
 
-          echo "$(ts) Chromium kapandı, yeniden başlatılıyor..." >> $LOG
-          sleep 3
-          exec "$0"
-          KIOSK
+          echo "$(ts) Chromium kapandi, yeniden..." >> $LOG
+          sleep 3; exec "$0"
+          EOF
           chmod 755 lb-config/config/includes.chroot/usr/local/bin/start-kiosk
 
-          # Openbox autostart (yedek başlatma yöntemi)
-          cat > lb-config/config/includes.chroot/etc/xdg/openbox/autostart << 'EOF'
-          /usr/local/bin/start-kiosk &
-          EOF
-
-      - name: Gereksiz servisler devre dışı bırak
-        run: |
-          mkdir -p lb-config/config/includes.chroot/etc/systemd/system
-
-          # login ekranı yok
-          ln -sf /dev/null \
-            lb-config/config/includes.chroot/etc/systemd/system/display-manager.service 2>/dev/null || true
-
-      - name: ISO oluştur
+      - name: ISO oluştur (sudo lb build)
         run: |
           cd lb-config
-          sudo lb build 2>&1 | tee /tmp/lb-build.log | tail -50
+          sudo lb build 2>&1 | tee /tmp/lb-build.log
+          echo "=== lb-config dizini ==="
+          ls -lah
 
       - name: ISO çıktısını hazırla
         run: |
           mkdir -p output
-          ISO=$(find lb-config -name "*.iso" | head -1)
+
+          # live-build ISO'yu lb-config/ içinde üretir
+          ISO=$(find lb-config/ -maxdepth 1 -name "*.iso" 2>/dev/null | head -1)
+
           if [ -z "$ISO" ]; then
-            echo "HATA: ISO bulunamadı"
-            ls -la lb-config/
+            echo "=== ISO bulunamadı, son 100 satır log ==="
+            tail -100 /tmp/lb-build.log
             exit 1
           fi
+
           DATE=$(date +%Y%m%d)
           cp "$ISO" "output/securegate-debian-$DATE.iso"
-          echo "ISO: $(du -sh output/securegate-debian-$DATE.iso)"
+          ls -lh output/
           sha256sum "output/securegate-debian-$DATE.iso" > output/SHA256SUMS.txt
           cat output/SHA256SUMS.txt
 
-      - name: Build logu yükle (hata durumunda)
+      - name: Build logu yükle (hata olursa)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: build-log
+          name: build-log-${{ github.run_number }}
           path: /tmp/lb-build.log
           retention-days: 7
 
-      - name: ISO artifact olarak yükle
+      - name: ISO artifact
         uses: actions/upload-artifact@v4
         with:
-          name: securegate-debian-iso-${{ github.run_number }}
+          name: securegate-debian-${{ github.run_number }}
           path: output/
           retention-days: 30
